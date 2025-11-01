@@ -1,0 +1,23 @@
+# AI File Organiser - Python Dependencies
+# Copyright © 2025 Alexandru Emanuel Vasile. All rights reserved.
+
+# Core dependencies
+requests>=2.31.0
+watchdog>=3.0.0
+jsonschema>=4.19.0
+
+# Web dashboard
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.4.0
+
+# File processing
+PyPDF2>=3.0.0
+python-docx>=1.0.0
+
+# Security and encryption
+cryptography>=41.0.0
+
+# Note: Ollama must be installed separately
+# Run: python setup_ollama.py
+# Or visit: https://ollama.ai

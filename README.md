@@ -53,11 +53,46 @@ src/
 
 ## Requirements
 
-- Python 3.8+
-- Ollama (for local LLM capabilities)
-- Dependencies listed in `requirements.txt`
+⚠️ **IMPORTANT**: This application requires **Ollama** to be installed for AI-powered file classification. Ollama is a mandatory dependency.
+
+### System Requirements
+- **Python 3.8 or later** (required)
+- **Ollama** (required for AI classification)
+- **4GB RAM minimum** (8GB recommended)
+- **2GB free disk space** (for Ollama and AI models)
+- **Internet connection** (for initial Ollama model download)
+
+### Dependencies
+All Python dependencies are listed in `requirements.txt` and will be installed automatically.
 
 ## Installation
+
+### 🚀 Quick Install (Automated - Recommended)
+
+**Windows:**
+```cmd
+git clone https://github.com/alexv879/Ai_File_Organiser.git
+cd Ai_File_Organiser
+install.bat
+```
+
+**Linux/macOS:**
+```bash
+git clone https://github.com/alexv879/Ai_File_Organiser.git
+cd Ai_File_Organiser
+chmod +x install.sh
+./install.sh
+```
+
+The automated installer will:
+1. Install Python dependencies
+2. Download and install Ollama
+3. Download the required AI model (`deepseek-r1:1.5b`)
+4. Verify everything is working
+
+### 📋 Manual Installation
+
+If you prefer manual installation or the automated installer fails:
 
 1. **Clone the repository**:
    ```bash
@@ -65,19 +100,37 @@ src/
    cd Ai_File_Organiser
    ```
 
-2. **Install dependencies**:
+2. **Install Python dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Set up Ollama** (optional but recommended):
-   - Download and install [Ollama](https://ollama.ai)
-   - Pull a model: `ollama pull llama2` (or another preferred model)
-   - Start Ollama service: `ollama serve`
+3. **Install Ollama** (REQUIRED):
+   
+   **Option A - Automated Setup Script:**
+   ```bash
+   python setup_ollama.py
+   ```
+   
+   **Option B - Manual Installation:**
+   
+   - **Windows**: Download from https://ollama.ai/download/windows
+   - **macOS**: Download from https://ollama.ai/download/mac
+   - **Linux**: Run `curl -fsSL https://ollama.ai/install.sh | sh`
 
-4. **Configure the application**:
-   - Edit configuration files in the config directory as needed
-   - Set up your classification rules and file organization preferences
+4. **Download AI Model** (if not done by setup script):
+   ```bash
+   ollama pull deepseek-r1:1.5b
+   ```
+
+5. **Start Ollama Service**:
+   - **Windows**: Ollama starts automatically
+   - **Linux/macOS**: Run `ollama serve` in a separate terminal
+
+6. **Verify Installation**:
+   ```bash
+   python -m src.main --help
+   ```
 
 ## Usage
 
@@ -166,6 +219,26 @@ This software is licensed under a Proprietary License. See `LICENSE` file for de
 For issues, questions, or inquiries about licensing and commercial use:
 - Contact: Alexandru Emanuel Vasile
 - GitHub: https://github.com/alexv879
+
+### Troubleshooting
+
+**Ollama Connection Issues:**
+- Verify Ollama is running: `curl http://localhost:11434/api/tags`
+- Check if model is installed: `ollama list`
+- Restart Ollama service
+
+**Python Import Errors:**
+- Reinstall dependencies: `pip install -r requirements.txt`
+- Verify Python version: `python --version` (must be 3.8+)
+
+**Permission Errors:**
+- Run with appropriate permissions
+- Check folder access rights in configuration
+
+**Model Download Fails:**
+- Check internet connection
+- Try manual download: `ollama pull deepseek-r1:1.5b`
+- Use alternative model in `config.json`
 
 ## Disclaimer
 
