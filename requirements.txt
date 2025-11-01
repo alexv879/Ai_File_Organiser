@@ -15,6 +15,11 @@ pydantic>=2.4.0
 PyPDF2>=3.0.0
 python-docx>=1.0.0
 
+# Advanced metadata extraction (optional but recommended)
+Pillow>=10.0.0          # Image EXIF data
+mutagen>=1.47.0         # Audio/video metadata
+python-docx>=1.0.0      # DOCX properties
+
 # Security and encryption
 cryptography>=41.0.0
 
