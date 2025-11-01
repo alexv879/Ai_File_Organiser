@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python tools/test_agent.py:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "mcp__ide__getDiagnostics"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

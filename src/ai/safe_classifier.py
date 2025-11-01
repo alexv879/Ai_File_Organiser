@@ -9,6 +9,7 @@ and validation to ensure safe file organization decisions.
 
 Stage 1: Reasoning Model analyzes file and provides detailed reasoning
 Stage 2: Validator Model checks decision for safety and correctness
+Stage 3: Hierarchical Organizer generates optimal 3-4 level folder structure
 
 NOTICE: This software is proprietary and confidential.
 See LICENSE.txt for full terms and conditions.
@@ -22,6 +23,9 @@ import requests
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from enum import Enum
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SafetyLevel(Enum):
@@ -41,22 +45,28 @@ class SafeClassifier:
     Stage 2 (Validation): Uses a validation model to check for safety issues,
                           logical errors, or potential data loss
     
-    This ensures files are organized safely with human-like reasoning.
+    Stage 3 (Hierarchical): Uses HierarchicalOrganizer to generate optimal
+                           3-4 level folder structure based on research
+    
+    This ensures files are organized safely with human-like reasoning and
+    intelligent folder hierarchies.
     """
 
     def __init__(self, 
                  base_url: str = "http://localhost:11434",
                  reasoning_model: str = "qwen2.5:14b",
                  validator_model: str = "deepseek-r1:14b",
-                 timeout: int = 60):
+                 timeout: int = 60,
+                 config=None):
         """
-        Initialize safe classifier with two models.
+        Initialize safe classifier with two models and hierarchical organizer.
         
         Args:
             base_url: Ollama API endpoint
             reasoning_model: Model for initial analysis (should be good at reasoning)
             validator_model: Model for validation (should catch errors)
             timeout: Request timeout in seconds
+            config: Configuration object (for HierarchicalOrganizer)
         
         Recommended model combinations:
         - reasoning_model: "qwen2.5:14b" or "deepseek-r1:14b" or "llama3.1:70b"
@@ -68,6 +78,16 @@ class SafeClassifier:
         self.reasoning_model = reasoning_model
         self.validator_model = validator_model
         self.timeout = timeout
+        self.config = config
+        
+        # Import HierarchicalOrganizer here to avoid circular imports
+        try:
+            from ..core.hierarchy_organizer import HierarchicalOrganizer
+            self.hierarchy_organizer = HierarchicalOrganizer(config)
+            logger.info("HierarchicalOrganizer initialized successfully")
+        except ImportError as e:
+            logger.warning(f"Could not import HierarchicalOrganizer: {e}")
+            self.hierarchy_organizer = None
 
     def is_available(self) -> Dict[str, bool]:
         """
@@ -240,7 +260,7 @@ Provide your validation:"""
                      file_size: Optional[int] = None,
                      current_location: Optional[str] = None) -> Dict[str, Any]:
         """
-        Classify file using two-stage reasoning + validation approach.
+        Classify file using three-stage reasoning + validation + hierarchy approach.
         
         Args:
             filename: Name of the file
@@ -254,6 +274,7 @@ Provide your validation:"""
                 - All fields from reasoning model
                 - validation_result: Validation outcome
                 - safety_concerns: List of safety issues
+                - hierarchy: Optimal folder structure (3-4 levels)
                 - final_decision: Overall recommendation
                 - success: Whether classification succeeded
         """
@@ -309,8 +330,41 @@ Provide your validation:"""
             reasoning_result["final_decision"] = "manual_review_required"
             return reasoning_result
         
-        # Combine results
+        # Combine reasoning and validation results
         combined = {**reasoning_result, **validation_result}
+        
+        # STAGE 3: Hierarchical Organization
+        if self.hierarchy_organizer:
+            print(f"[Stage 3] Generating intelligent folder hierarchy...")
+            try:
+                file_metadata = {
+                    'size': file_size,
+                    'modified_time': None,  # Would come from actual file stat
+                    'content_preview': text_snippet
+                }
+                
+                hierarchy = self.hierarchy_organizer.generate_hierarchy(
+                    filename=filename,
+                    extension=extension,
+                    file_metadata=file_metadata,
+                    classification=reasoning_result
+                )
+                
+                # Replace suggested_path with hierarchical path
+                combined['hierarchy'] = hierarchy
+                combined['suggested_path'] = hierarchy['full_path']
+                combined['hierarchy_reasoning'] = hierarchy['reasoning']
+                combined['hierarchy_depth'] = hierarchy['depth']
+                combined['is_optimal_depth'] = hierarchy['is_optimal_depth']
+                
+                logger.info(f"Generated hierarchy: {hierarchy['full_path']} (depth: {hierarchy['depth']})")
+            except Exception as e:
+                logger.error(f"Hierarchy generation failed: {e}")
+                # Fallback to original AI suggested path
+                combined['hierarchy_error'] = str(e)
+        else:
+            logger.warning("HierarchicalOrganizer not available, using flat structure")
+            combined['hierarchy'] = None
         
         # Determine final decision
         validation_status = validation_result.get("validation_result", "needs_review")
@@ -334,7 +388,8 @@ Provide your validation:"""
             "requires_review": requires_review,
             "used_models": {
                 "reasoning": self.reasoning_model,
-                "validator": self.validator_model
+                "validator": self.validator_model,
+                "hierarchy": self.hierarchy_organizer is not None
             }
         })
         
