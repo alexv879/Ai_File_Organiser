@@ -6,7 +6,11 @@
       "Bash(python tools/test_agent.py:*)",
       "Bash(python:*)",
       "Bash(curl:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(tree:*)",
+      "Bash(pip install:*)",
+      "Bash(dir /S /B)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

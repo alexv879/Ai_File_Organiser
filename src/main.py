@@ -72,6 +72,13 @@ class FileOrganiser:
 
         print("✅ License valid")
 
+        # Initialize components
+        self._initialize_components()
+
+        print("✅ Initialization complete\n")
+
+    def _initialize_components(self):
+        """Initialize all application components."""
         # Initialize Ollama client
         print("Connecting to Ollama...")
         self.ollama = OllamaClient(
@@ -103,8 +110,6 @@ class FileOrganiser:
             config=self.config
         )
 
-        print("✅ Initialization complete\n")
-
     def _check_license(self) -> bool:
         """
         Check if license is valid.
@@ -129,8 +134,8 @@ class FileOrganiser:
 
             if result['success']:
                 print("\n✅ You can now use the AI File Organiser!")
-                # Re-initialize after successful activation
-                self.__init__()
+                # Re-initialize components after successful activation
+                self._initialize_components()
             else:
                 print("\n❌ Activation failed. Exiting.")
                 sys.exit(1)

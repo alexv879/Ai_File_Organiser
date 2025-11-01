@@ -156,20 +156,20 @@ class StorageManager:
         else:
             return self.available_drives
     
-    def select_target_drive(self, 
+    def select_target_drive(self,
                            file_path: str,
                            file_size: int,
-                           file_category: str,
+                           _file_category: str,
                            is_archive: bool = False) -> Tuple[str, str]:
         """
         Select the optimal target drive for a file based on strategy.
-        
+
         Args:
             file_path: Current file path
             file_size: File size in bytes
-            file_category: Primary category (Finance, Work, Photos, etc.)
+            _file_category: Primary category (Finance, Work, Photos, etc.) - reserved for future use
             is_archive: Whether this is an archive/old file
-            
+
         Returns:
             Tuple of (selected_drive_letter, reasoning)
         """

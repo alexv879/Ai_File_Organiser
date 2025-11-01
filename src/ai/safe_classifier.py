@@ -20,8 +20,7 @@ License: Proprietary (200-key limited release)
 
 import json
 import requests
-from typing import Dict, Any, Optional, List
-from pathlib import Path
+from typing import Dict, Any, Optional
 from enum import Enum
 import logging
 

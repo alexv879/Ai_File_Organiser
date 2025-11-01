@@ -35,6 +35,9 @@ except ImportError:
 class TextExtractor:
     """Shared text extraction without classifier dependency."""
 
+    # Maximum file size for text extraction (10 MB)
+    MAX_FILE_SIZE = 10 * 1024 * 1024
+
     def __init__(self, config):
         """
         Initialize text extractor.
@@ -91,6 +94,11 @@ class TextExtractor:
             str or None: Extracted text or None if extraction fails
         """
         try:
+            # Check file size before attempting extraction
+            file_size = path.stat().st_size
+            if file_size > self.MAX_FILE_SIZE:
+                return f"[File too large for text extraction: {file_size / (1024*1024):.1f} MB]"
+
             if extension in ['txt', 'md', 'log', 'csv', 'json', 'xml', 'html']:
                 with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                     return f.read(self.text_extract_limit)

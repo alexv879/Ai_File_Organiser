@@ -29,7 +29,7 @@ License: Proprietary (200-key limited release)
 
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 from enum import Enum
 import logging
@@ -218,7 +218,7 @@ class HierarchicalOrganizer:
         }
     
     def _determine_primary_category(self, filename: str, extension: str,
-                                    metadata: Dict, classification: Dict) -> Tuple[str, str]:
+                                    _metadata: Dict, classification: Dict) -> Tuple[str, str]:
         """Determine Level 1: Primary category"""
         
         # Try AI classification first
@@ -257,9 +257,9 @@ class HierarchicalOrganizer:
         
         return 'Documents', f"Primary: Documents (default for .{extension})"
     
-    def _determine_secondary_category(self, primary: str, filename: str, 
-                                     extension: str, metadata: Dict,
-                                     classification: Dict) -> Tuple[Optional[str], str]:
+    def _determine_secondary_category(self, primary: str, filename: str,
+                                     _extension: str, _metadata: Dict,
+                                     _classification: Dict) -> Tuple[Optional[str], str]:
         """Determine Level 2: Secondary category/subcategory"""
         
         primary_lower = primary.lower()
@@ -319,7 +319,7 @@ class HierarchicalOrganizer:
         default = defaults.get(primary_lower, 'General')
         return default, f"Sub: {default} (default for {primary})"
     
-    def _determine_tertiary_level(self, primary: str, secondary: Optional[str],
+    def _determine_tertiary_level(self, _primary: str, _secondary: Optional[str],
                                   filename: str, metadata: Dict,
                                   classification: Dict) -> Tuple[Optional[str], str]:
         """Determine Level 3: Usually temporal organization"""
@@ -435,7 +435,7 @@ class HierarchicalOrganizer:
         
         return None
     
-    def _extract_context(self, filename: str, classification: Dict) -> Tuple[Optional[str], str]:
+    def _extract_context(self, filename: str, _classification: Dict) -> Tuple[Optional[str], str]:
         """Extract context-based organization from filename"""
         
         # Common context patterns
@@ -454,8 +454,8 @@ class HierarchicalOrganizer:
         
         return None, ""
     
-    def _extract_client_name(self, filename: str, metadata: Dict, 
-                           classification: Dict) -> Optional[str]:
+    def _extract_client_name(self, filename: str, _metadata: Dict,
+                           _classification: Dict) -> Optional[str]:
         """Extract client/company name from filename or content"""
         
         # Pattern: Client-<Name>, <Name>-Invoice, etc.
@@ -471,8 +471,8 @@ class HierarchicalOrganizer:
         
         return None
     
-    def _extract_project_name(self, filename: str, metadata: Dict,
-                            classification: Dict) -> Optional[str]:
+    def _extract_project_name(self, filename: str, _metadata: Dict,
+                            _classification: Dict) -> Optional[str]:
         """Extract project name from filename"""
         
         patterns = [
@@ -487,7 +487,7 @@ class HierarchicalOrganizer:
         
         return None
     
-    def _extract_event_name(self, filename: str, metadata: Dict) -> Optional[str]:
+    def _extract_event_name(self, filename: str, _metadata: Dict) -> Optional[str]:
         """Extract event name for photos/videos"""
         
         patterns = [

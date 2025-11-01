@@ -7,13 +7,11 @@ This script automates the installation and configuration of Ollama
 for use with the AI File Organiser application.
 """
 
-import os
 import sys
 import platform
 import subprocess
 import time
 import requests
-from pathlib import Path
 
 
 class OllamaSetup:
@@ -155,7 +153,7 @@ class OllamaSetup:
                 time.sleep(3)
             
             # Verify it's running
-            for attempt in range(10):
+            for _attempt in range(10):
                 if self.check_ollama_running():
                     return True
                 time.sleep(1)

@@ -26,7 +26,7 @@ from typing import Dict, Any, Optional, List
 import json
 
 # Import Safety Guardian for final safety checks
-from core.safety_guardian import SafetyGuardian
+from .safety_guardian import SafetyGuardian
 
 # Initialize logger for audit trail (MEDIUM #2 FIX)
 logger = logging.getLogger(__name__)
@@ -380,7 +380,7 @@ class ActionManager:
 
             # Check if file is locked/in use (CRITICAL FIX #3)
             try:
-                with open(source, 'rb+') as f:
+                with open(source, 'rb+') as _f:
                     pass
             except (IOError, PermissionError) as e:
                 return {
@@ -434,13 +434,13 @@ class ActionManager:
             'message': f'[DRY RUN] Would {action} file to {destination}'
         }
 
-    def delete_file(self, file_path: str, reason: str = "User requested") -> Dict[str, Any]:
+    def delete_file(self, file_path: str, _reason: str = "User requested") -> Dict[str, Any]:
         """
         Delete a file.
 
         Args:
             file_path (str): Path to file to delete
-            reason (str): Reason for deletion
+            _reason (str): Reason for deletion (currently unused, reserved for future logging)
 
         Returns:
             Dict: Result information

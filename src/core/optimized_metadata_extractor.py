@@ -19,11 +19,11 @@ License: Proprietary (200-key limited release)
 
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from pathlib import Path
 import time
 
-from .performance_optimizer import PerformanceOptimizer, QuantizationLevel
+from .performance_optimizer import QuantizationLevel
 from .metadata_extractor import MetadataExtractor
 
 logger = logging.getLogger(__name__)
@@ -164,11 +164,19 @@ class OptimizedMetadataExtractor:
         """Extract basic file system information (always fast)"""
         try:
             stat = os.stat(file_path)
+
+            # Use st_birthtime if available, otherwise fall back to st_mtime
+            try:
+                created_date = stat.st_birthtime
+            except AttributeError:
+                # st_birthtime not available on this platform
+                created_date = stat.st_mtime
+
             return {
                 'file_name': Path(file_path).name,
                 'file_size': stat.st_size,
                 'modified_date': stat.st_mtime,
-                'created_date': stat.st_ctime,
+                'created_date': created_date,
             }
         except Exception as e:
             logger.warning(f"Error getting file system info for {file_path}: {e}")

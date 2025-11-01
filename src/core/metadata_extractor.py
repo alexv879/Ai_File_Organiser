@@ -22,7 +22,7 @@ License: Proprietary (200-key limited release)
 
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 from datetime import datetime
 import logging
 
@@ -134,13 +134,20 @@ class AdvancedMetadataExtractor:
     def _extract_basic_metadata(self, file_path: Path) -> Dict[str, Any]:
         """Extract basic file system metadata (always available)"""
         stat = file_path.stat()
-        
+
+        # Use st_birthtime if available (macOS/BSD), otherwise fall back to st_mtime
+        try:
+            created_time = datetime.fromtimestamp(stat.st_birthtime)
+        except AttributeError:
+            # st_birthtime not available on this platform, use st_mtime as fallback
+            created_time = datetime.fromtimestamp(stat.st_mtime)
+
         return {
             'filename': file_path.name,
             'extension': file_path.suffix.lower().lstrip('.'),
             'size_bytes': stat.st_size,
             'size_mb': stat.st_size / (1024**2),
-            'created_time': datetime.fromtimestamp(stat.st_ctime),
+            'created_time': created_time,
             'modified_time': datetime.fromtimestamp(stat.st_mtime),
             'accessed_time': datetime.fromtimestamp(stat.st_atime),
             'path': str(file_path),

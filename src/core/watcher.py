@@ -125,12 +125,30 @@ class FileEventHandler(FileSystemEventHandler):
             event (FileSystemEvent): File system event
         """
         if not event.is_directory and self._should_process(event.src_path):
-            # Small delay to ensure file is fully written
-            time.sleep(0.5)
+            # Wait for file to stabilize (check both time and size)
+            file_path = Path(event.src_path)
 
-            # Re-check file still exists (might have been temp file)
-            if Path(event.src_path).exists():
-                self._process_file(event.src_path)
+            try:
+                # Initial check
+                old_size = file_path.stat().st_size
+                time.sleep(0.5)
+
+                # Re-check file still exists and is stable
+                if file_path.exists():
+                    new_size = file_path.stat().st_size
+
+                    # If file is still growing, wait a bit more
+                    if new_size != old_size:
+                        time.sleep(1)
+                        # Final check
+                        if file_path.exists():
+                            self._process_file(event.src_path)
+                    else:
+                        # File size is stable
+                        self._process_file(event.src_path)
+            except OSError:
+                # File may have been deleted or moved, skip it
+                pass
 
     def on_modified(self, event: FileSystemEvent):
         """
@@ -301,6 +319,14 @@ class FolderWatcher:
         """
         found_files = []
 
+        # Get blacklist from config (same as start() method)
+        blacklist = []
+        try:
+            if self.config and hasattr(self.config, 'path_blacklist'):
+                blacklist = self.config.path_blacklist
+        except Exception:
+            blacklist = []
+
         for folder in self.folders:
             if not folder.exists():
                 continue
@@ -310,8 +336,8 @@ class FolderWatcher:
             # Walk through directory
             for item in folder.rglob('*'):
                 if item.is_file():
-                    # Use same filtering logic as event handler
-                    event_handler = FileEventHandler()
+                    # Use same filtering logic as event handler with blacklist
+                    event_handler = FileEventHandler(blacklist=blacklist)
                     if event_handler._should_process(str(item)):
                         found_files.append(str(item))
 

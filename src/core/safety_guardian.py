@@ -24,7 +24,6 @@ License: Proprietary (200-key limited release)
 """
 
 import os
-import re
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -236,7 +235,7 @@ class SafetyGuardian:
         
         return result
     
-    def _check_path_security(self, source: str, destination: str) -> List[Tuple[ThreatType, str, str]]:
+    def _check_path_security(self, _source: str, destination: str) -> List[Tuple[ThreatType, str, str]]:
         """Check for path traversal and security issues"""
         threats = []
         
@@ -283,7 +282,7 @@ class SafetyGuardian:
         
         return threats
     
-    def _check_system_file_protection(self, source: str, destination: str) -> List[Tuple[ThreatType, str, str]]:
+    def _check_system_file_protection(self, source: str, _destination: str) -> List[Tuple[ThreatType, str, str]]:
         """Protect critical system files"""
         threats = []
         
@@ -336,7 +335,7 @@ class SafetyGuardian:
         
         return threats
     
-    def _check_application_integrity(self, source: str, destination: str) -> List[Tuple[ThreatType, str, str]]:
+    def _check_application_integrity(self, source: str, _destination: str) -> List[Tuple[ThreatType, str, str]]:
         """Protect application files and configurations"""
         threats = []
         
@@ -479,12 +478,12 @@ class SafetyGuardian:
         
         return warnings
     
-    def _check_permissions(self, source: str, destination: str) -> List[Tuple[ThreatType, str, str]]:
+    def _check_permissions(self, source: str, _destination: str) -> List[Tuple[ThreatType, str, str]]:
         """Check file permissions and access rights"""
         threats = []
-        
+
         try:
-            source_path = Path(source)
+            _source_path = Path(source)
             
             # Check if we have read access to source
             if not os.access(source, os.R_OK):

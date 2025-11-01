@@ -1021,7 +1021,7 @@ def scan_duplicates():
     duplicates = []
 
     for folder in state.config.watched_folders:
-        folder_dups = state.duplicate_finder.find_duplicates_in_directory(folder, recursive=False)
+        folder_dups = state.duplicate_finder.find_duplicates_in_directory(folder, recursive=True)
         duplicates.extend(folder_dups)
 
     summary = state.duplicate_finder.get_duplicate_summary(duplicates)

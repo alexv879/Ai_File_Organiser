@@ -12,8 +12,7 @@ import subprocess
 import sys
 import platform
 import requests
-import time
-from typing import List, Dict
+from typing import List
 
 
 class SafeModelSetup:
