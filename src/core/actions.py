@@ -25,6 +25,9 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 import json
 
+# Import Safety Guardian for final safety checks
+from core.safety_guardian import SafetyGuardian
+
 # Initialize logger for audit trail (MEDIUM #2 FIX)
 logger = logging.getLogger(__name__)
 
@@ -40,7 +43,7 @@ class ActionManager:
         undo_history (List): Stack of recent actions for undo functionality
     """
 
-    def __init__(self, config, db_manager, dry_run: bool = None):
+    def __init__(self, config, db_manager, dry_run: bool = None, ollama_client=None):
         """
         Initialize action manager.
 
@@ -48,12 +51,16 @@ class ActionManager:
             config: Configuration object
             db_manager: Database manager instance
             dry_run (bool, optional): Override config dry_run setting
+            ollama_client: Optional Ollama client for AI safety checks
         """
         self.config = config
         self.db_manager = db_manager
         self.dry_run = dry_run if dry_run is not None else config.dry_run
         self.undo_history: List[Dict[str, Any]] = []
         self.max_undo_history = 50  # Keep last 50 actions
+        
+        # Initialize Safety Guardian for final evaluation
+        self.safety_guardian = SafetyGuardian(config, ollama_client)
 
     def execute(self, file_path: str, classification: Dict[str, Any],
                 user_approved: bool = False, folder_policy: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -168,6 +175,53 @@ class ActionManager:
                     'time_saved': 0.0,
                     'message': 'No action suggested'
                 }
+
+            # ====================================================================
+            # FINAL SAFETY CHECKPOINT - Safety Guardian Evaluation
+            # ====================================================================
+            # This is the LAST LINE OF DEFENSE before executing any operation
+            # The Safety Guardian performs comprehensive multi-layer validation:
+            # - Path security (traversal, escapes)
+            # - System file protection
+            # - Application integrity
+            # - Data loss prevention
+            # - Logic validation
+            # - Permission checks
+            # - AI reasoning evaluation (if available)
+            #
+            # If guardian blocks operation, we STOP immediately.
+            # ====================================================================
+            
+            logger.info(f"[FINAL SAFETY CHECK] Evaluating operation with Safety Guardian...")
+            safety_result = self.safety_guardian.evaluate_operation(
+                source_path=str(path),
+                destination_path=str(new_path),
+                operation=action_type,
+                classification=classification,
+                user_approved=user_approved
+            )
+            
+            # Check if Safety Guardian approved the operation
+            if not safety_result['approved']:
+                logger.warning(f"[SAFETY GUARDIAN BLOCKED] Operation rejected: {safety_result['reasoning']}")
+                return {
+                    'success': False,
+                    'action': 'blocked_by_guardian',
+                    'old_path': file_path,
+                    'new_path': str(new_path),
+                    'time_saved': 0.0,
+                    'message': f"Safety Guardian blocked operation: {safety_result['reasoning']}",
+                    'safety_result': safety_result,  # Include full safety evaluation
+                    'requires_confirmation': safety_result.get('requires_confirmation', True),
+                    'risk_level': safety_result.get('risk_level'),
+                    'threats': safety_result.get('threats', [])
+                }
+            
+            # Log if operation proceeded despite warnings
+            if safety_result.get('warnings'):
+                logger.info(f"[SAFETY GUARDIAN] Operation approved WITH WARNINGS: {len(safety_result['warnings'])} warnings")
+            else:
+                logger.info(f"[SAFETY GUARDIAN] Operation approved - proceeding with {action_type}")
 
             # Perform the action
             if self.dry_run:
@@ -588,7 +642,22 @@ class ActionManager:
         Returns:
             Dict: Statistics including total actions, time saved, etc.
         """
-        return self.db_manager.get_stats('all')
+        stats = self.db_manager.get_stats('all')
+        
+        # Add Safety Guardian statistics
+        stats['safety_guardian'] = self.safety_guardian.get_statistics()
+        stats['blocked_operations'] = len(self.safety_guardian.get_blocked_operations())
+        
+        return stats
+    
+    def get_safety_audit_log(self) -> List[Dict[str, Any]]:
+        """
+        Get complete safety audit log of blocked operations.
+        
+        Returns:
+            List of blocked operations with full context
+        """
+        return self.safety_guardian.get_blocked_operations()
 
 
 if __name__ == "__main__":
