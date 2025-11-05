@@ -52,7 +52,7 @@ class StructuredFormatter(logging.Formatter):
 
         # Add any extra fields from the record
         if hasattr(record, 'extra_data'):
-            log_data.update(record.extra_data)
+            log_data.update(record.extra_data)  # type: ignore[attr-defined]
 
         return json.dumps(log_data)
 
@@ -107,23 +107,23 @@ class AgentLogger:
         self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
 
-    def info(self, message: str, **kwargs):
+    def info(self, message: str, **kwargs: Any) -> None:
         """Log info message with optional extra data."""
         self.logger.info(message, extra={'extra_data': kwargs})
 
-    def warning(self, message: str, **kwargs):
+    def warning(self, message: str, **kwargs: Any) -> None:
         """Log warning message with optional extra data."""
         self.logger.warning(message, extra={'extra_data': kwargs})
 
-    def error(self, message: str, **kwargs):
+    def error(self, message: str, **kwargs: Any) -> None:
         """Log error message with optional extra data."""
         self.logger.error(message, extra={'extra_data': kwargs})
 
-    def debug(self, message: str, **kwargs):
+    def debug(self, message: str, **kwargs: Any) -> None:
         """Log debug message with optional extra data."""
         self.logger.debug(message, extra={'extra_data': kwargs})
 
-    def agent_call(self, model_name: str, prompt_hash: str, file_path: str):
+    def agent_call(self, model_name: str, prompt_hash: str, file_path: str) -> None:
         """Log an agent LLM call."""
         self.info(
             "Agent LLM call initiated",
@@ -135,7 +135,7 @@ class AgentLogger:
 
     def agent_response(self, model_name: str, prompt_hash: str,
                        response_hash: str, parse_success: bool,
-                       validation_success: bool):
+                       validation_success: bool) -> None:
         """Log an agent LLM response."""
         self.info(
             "Agent LLM response received",
@@ -147,9 +147,9 @@ class AgentLogger:
             event_type='agent_response'
         )
 
-    def agent_action(self, action: str, file_path: str, destination: str = None,
+    def agent_action(self, action: str, file_path: str, destination: Optional[str] = None,
                      approved: bool = False, blocked: bool = False,
-                     block_reason: str = None):
+                     block_reason: Optional[str] = None) -> None:
         """Log an agent-suggested action."""
         self.info(
             f"Agent suggested action: {action}",
@@ -162,7 +162,7 @@ class AgentLogger:
             event_type='agent_action'
         )
 
-    def model_failure(self, model_name: str, error: str, retry_count: int = 0):
+    def model_failure(self, model_name: str, error: str, retry_count: int = 0) -> None:
         """Log a model call failure."""
         self.error(
             f"Model call failed: {error}",
@@ -172,7 +172,7 @@ class AgentLogger:
             event_type='model_failure'
         )
 
-    def validation_failure(self, error: str, raw_response_preview: str = None):
+    def validation_failure(self, error: str, raw_response_preview: Optional[str] = None) -> None:
         """Log a validation failure."""
         self.warning(
             f"Validation failed: {error}",
@@ -181,7 +181,7 @@ class AgentLogger:
             event_type='validation_failure'
         )
 
-    def safety_block(self, file_path: str, reason: str, check_type: str):
+    def safety_block(self, file_path: str, reason: str, check_type: str) -> None:
         """Log a safety check blocking an action."""
         self.warning(
             f"Safety check blocked action: {reason}",
@@ -190,6 +190,21 @@ class AgentLogger:
             check_type=check_type,
             event_type='safety_block'
         )
+
+    def log_operation(self, operation: str, file_path: str, old_location: Optional[str], new_location: Optional[str], status: str) -> None:
+        """Append an operation line to logs/operations.log for undo/audit.
+
+        Format: timestamp | OPERATION | file_path | old_location | new_location | status
+        """
+        logs_dir = Path(__file__).parent.parent.parent / 'logs'
+        logs_dir.mkdir(exist_ok=True)
+        line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | {operation.upper()} | {file_path} | {old_location or '-'} | {new_location or '-'} | {status}\n"
+        try:
+            with (logs_dir / 'operations.log').open('a', encoding='utf-8') as f:
+                f.write(line)
+        except Exception:
+            # Fallback to standard logger
+            self.info("OPLOG", operation=operation, file_path=file_path, old_location=old_location, new_location=new_location, status=status)
 
 
 # Global logger instance

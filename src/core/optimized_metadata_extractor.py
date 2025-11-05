@@ -24,7 +24,7 @@ from pathlib import Path
 import time
 
 from .performance_optimizer import QuantizationLevel
-from .metadata_extractor import MetadataExtractor
+from .metadata_extractor import AdvancedMetadataExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class OptimizedMetadataExtractor:
         self.config = config
         
         # Initialize base metadata extractor
-        self.base_extractor = MetadataExtractor()
+        self.base_extractor = AdvancedMetadataExtractor()
         
         # Initialize or use provided performance optimizer
         if performance_optimizer:
@@ -195,7 +195,7 @@ class OptimizedMetadataExtractor:
         
         try:
             # Use base extractor but filter results
-            full_metadata = self.base_extractor.extract_image_metadata(file_path)
+            full_metadata = self.base_extractor.extract_metadata(file_path)
             
             # Include EXIF date if requested
             if force_full or profile.get('exif_date'):
@@ -234,7 +234,7 @@ class OptimizedMetadataExtractor:
                 return metadata
         
         try:
-            full_metadata = self.base_extractor.extract_pdf_metadata(file_path)
+            full_metadata = self.base_extractor.extract_metadata(file_path)
             
             # Include basic metadata if requested
             if force_full or profile.get('pdf_metadata'):
@@ -265,7 +265,7 @@ class OptimizedMetadataExtractor:
             return metadata
         
         try:
-            full_metadata = self.base_extractor.extract_audio_metadata(file_path)
+            full_metadata = self.base_extractor.extract_metadata(file_path)
             
             # Include basic tags if requested
             if force_full or profile.get('audio_tags'):
@@ -295,7 +295,7 @@ class OptimizedMetadataExtractor:
             return metadata
         
         try:
-            full_metadata = self.base_extractor.extract_video_metadata(file_path)
+            full_metadata = self.base_extractor.extract_metadata(file_path)
             
             # Include basic info if requested
             if force_full or profile.get('video_info'):
@@ -325,7 +325,7 @@ class OptimizedMetadataExtractor:
             return metadata
         
         try:
-            full_metadata = self.base_extractor.extract_document_metadata(file_path)
+            full_metadata = self.base_extractor.extract_metadata(file_path)
             
             # Include basic properties if requested
             if force_full or profile.get('document_props'):

@@ -6,7 +6,12 @@ Proprietary Software - 200-Key Limited Release License
 
 This module handles file classification using a hybrid approach:
 1. Rule-based classification (fast, deterministic)
+   - MIME type detection (RFC 2046 - Multipurpose Internet Mail Extensions)
+   - File extension matching
+   - Magic number detection
 2. AI-powered classification (semantic, context-aware)
+   - Content analysis using Ollama LLM
+   - Semantic understanding of file purpose
 
 The classifier determines the appropriate category and destination path
 for files based on their type, name, and content.
@@ -18,23 +23,47 @@ Author: Alexandru Emanuel Vasile
 License: Proprietary (200-key limited release)
 """
 
-import os
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 import mimetypes
+import hashlib
 
-# Try to import text extraction libraries
+# Persistent caching using diskcache
+# Reference: diskcache library for disk-based caching
+try:
+    import diskcache as dc
+    DISKCACHE_SUPPORT = True
+except ImportError:
+    DISKCACHE_SUPPORT = False
+
+# Advanced file type detection using python-magic
+# Reference: libmagic for MIME type detection via magic numbers
+try:
+    import filetype
+    FILETYPE_SUPPORT = True
+except ImportError:
+    FILETYPE_SUPPORT = False
+
+try:
+    import magic
+    MAGIC_SUPPORT = True
+except ImportError:
+    MAGIC_SUPPORT = False
+
+# Text extraction libraries
 try:
     import PyPDF2
     PDF_SUPPORT = True
 except ImportError:
     PDF_SUPPORT = False
 
+# Python-docx for Word document handling
 try:
-    from docx import Document
+    from docx import Document  # type: ignore
     DOCX_SUPPORT = True
 except ImportError:
+    Document = None  # type: ignore
     DOCX_SUPPORT = False
 
 
@@ -63,6 +92,9 @@ class FileClassifier:
         self.enable_ai = config.enable_ai and ollama_client is not None
         self.text_extract_limit = config.text_extract_limit
 
+        # Initialize caching
+        self._init_caching()
+
     def classify(self, file_path: str, deep_analysis: bool = False) -> Dict[str, Any]:
         """
         Classify a file and suggest organization action.
@@ -87,8 +119,36 @@ class FileClassifier:
         """
         path = Path(file_path)
 
-        # Basic file information
-        file_info = self._extract_file_info(path)
+        # Check cache first for quick results
+        file_hash = self._get_file_hash(file_path)
+        cached_result = self._get_cached_classification(file_hash)
+        if cached_result and not deep_analysis:
+            cached_result['cached'] = True
+            return cached_result
+
+        try:
+            # Basic file information
+            file_info = self._extract_file_info(path)
+        except FileNotFoundError:
+            # Handle non-existent files gracefully
+            return {
+                'category': 'Unsorted',
+                'suggested_path': 'Unsorted/',
+                'rename': None,
+                'reason': 'File not found',
+                'confidence': 'low',
+                'method': 'rule-based'
+            }
+        except Exception as e:
+            # Handle other file access errors
+            return {
+                'category': 'Unsorted',
+                'suggested_path': 'Unsorted/',
+                'rename': None,
+                'reason': f'File access error: {str(e)}',
+                'confidence': 'low',
+                'method': 'rule-based'
+            }
 
         # Stage 1: Rule-based classification
         rule_result = self._classify_by_rules(file_info)
@@ -118,7 +178,12 @@ class FileClassifier:
                 }
 
         # Fallback to rule-based result
-        return rule_result
+        result = rule_result
+
+        # Cache the result for future use
+        self._cache_classification(file_hash, result)
+
+        return result
 
     def _extract_file_info(self, path: Path) -> Dict[str, Any]:
         """
@@ -130,17 +195,24 @@ class FileClassifier:
         Returns:
             Dict: File information including name, extension, size, mime type, etc.
         """
+        file_path_str = str(path)
+
+        # Check cache first
+        cached_metadata = self._get_cached_metadata(file_path_str)
+        if cached_metadata:
+            return cached_metadata
+
         stat = path.stat()
         extension = path.suffix.lower().lstrip('.')
 
-        # Determine MIME type
-        mime_type, _ = mimetypes.guess_type(str(path))
+        # Determine MIME type using multiple methods for better accuracy
+        mime_type = self._detect_mime_type(path)
 
         # Extract text snippet if possible
         text_snippet = self._extract_text(path, extension)
 
-        return {
-            'path': str(path),
+        file_info = {
+            'path': file_path_str,
             'filename': path.name,
             'stem': path.stem,
             'extension': extension,
@@ -149,6 +221,43 @@ class FileClassifier:
             'text_snippet': text_snippet,
             'modified_time': stat.st_mtime
         }
+
+        # Cache the metadata
+        self._cache_metadata(file_path_str, file_info)
+
+        return file_info
+
+    def _detect_mime_type(self, path: Path) -> Optional[str]:
+        """
+        Detect MIME type using multiple libraries for better accuracy.
+
+        Args:
+            path (Path): File path
+
+        Returns:
+            str or None: Detected MIME type
+        """
+        # Try python-magic first (most accurate)
+        if MAGIC_SUPPORT:
+            try:
+                mime_type = magic.from_file(str(path), mime=True)
+                if mime_type:
+                    return mime_type
+            except Exception:
+                pass
+
+        # Try filetype.py
+        if FILETYPE_SUPPORT:
+            try:
+                kind = filetype.guess(str(path))
+                if kind:
+                    return kind.mime
+            except Exception:
+                pass
+
+        # Fallback to mimetypes
+        mime_type, _ = mimetypes.guess_type(str(path))
+        return mime_type
 
     def _extract_text(self, path: Path, extension: str) -> Optional[str]:
         """
@@ -194,9 +303,15 @@ class FileClassifier:
         return None
 
     def _extract_docx_text(self, path: Path) -> Optional[str]:
-        """Extract text from DOCX file."""
+        """
+        Extract text from DOCX file using python-docx.
+        Reference: ISO/IEC 29500 (Office Open XML format)
+        """
+        if not DOCX_SUPPORT or Document is None:
+            return None
+            
         try:
-            doc = Document(path)
+            doc = Document(str(path))
             text = '\n'.join([para.text for para in doc.paragraphs[:5]])  # First 5 paragraphs
             return text[:self.text_extract_limit]
         except Exception:
@@ -425,6 +540,122 @@ class FileClassifier:
         parts = path.strip('/').split('/')
         return parts[0] if parts else 'Unsorted'
 
+    def _init_caching(self):
+        """Initialize caching system for performance optimization."""
+        if DISKCACHE_SUPPORT:
+            # Create cache directory in user's home
+            cache_dir = Path.home() / ".ai_file_organiser" / "cache"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            # Initialize caches with different sizes and TTL
+            self.classification_cache = dc.Cache(
+                str(cache_dir / "classification"),
+                size_limit=100 * 1024 * 1024,  # 100MB
+                ttl=7 * 24 * 3600  # 7 days
+            )
+            self.metadata_cache = dc.Cache(
+                str(cache_dir / "metadata"),
+                size_limit=50 * 1024 * 1024,  # 50MB
+                ttl=24 * 3600  # 24 hours
+            )
+        else:
+            # Fallback to simple dict caches (not persistent)
+            self.classification_cache = {}
+            self.metadata_cache = {}
+
+    def _get_file_hash(self, file_path: str) -> str:
+        """
+        Generate a hash for file content and metadata for caching.
+
+        Args:
+            file_path (str): Path to file
+
+        Returns:
+            str: SHA256 hash of file metadata
+        """
+        try:
+            path = Path(file_path)
+            stat = path.stat()
+
+            # Create hash from file metadata (not content for performance)
+            hash_input = f"{file_path}:{stat.st_size}:{stat.st_mtime}:{getattr(stat, 'st_birthtime', getattr(stat, 'st_ctime', stat.st_mtime))}"
+            return hashlib.sha256(hash_input.encode()).hexdigest()
+        except Exception:
+            # Fallback to path-based hash
+            return hashlib.sha256(file_path.encode()).hexdigest()
+
+    def _get_cached_classification(self, file_hash: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cached classification result.
+
+        Args:
+            file_hash (str): File hash
+
+        Returns:
+            Dict or None: Cached result or None if not found
+        """
+        try:
+            if DISKCACHE_SUPPORT:
+                result = self.classification_cache.get(file_hash)
+                return result if isinstance(result, dict) else None
+            else:
+                result = self.classification_cache.get(file_hash)
+                return result if isinstance(result, dict) else None
+        except Exception:
+            return None
+
+    def _cache_classification(self, file_hash: str, result: Dict[str, Any]):
+        """
+        Cache classification result.
+
+        Args:
+            file_hash (str): File hash
+            result (Dict): Classification result to cache
+        """
+        try:
+            if DISKCACHE_SUPPORT:
+                self.classification_cache[file_hash] = result
+            else:
+                self.classification_cache[file_hash] = result
+        except Exception:
+            pass  # Cache failure shouldn't break classification
+
+    def _get_cached_metadata(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cached file metadata.
+
+        Args:
+            file_path (str): File path
+
+        Returns:
+            Dict or None: Cached metadata or None if not found
+        """
+        try:
+            if DISKCACHE_SUPPORT:
+                result = self.metadata_cache.get(file_path)
+                return result if isinstance(result, dict) else None
+            else:
+                result = self.metadata_cache.get(file_path)
+                return result if isinstance(result, dict) else None
+        except Exception:
+            return None
+
+    def _cache_metadata(self, file_path: str, metadata: Dict[str, Any]):
+        """
+        Cache file metadata.
+
+        Args:
+            file_path (str): File path
+            metadata (Dict): Metadata to cache
+        """
+        try:
+            if DISKCACHE_SUPPORT:
+                self.metadata_cache[file_path] = metadata
+            else:
+                self.metadata_cache[file_path] = metadata
+        except Exception:
+            pass  # Cache failure shouldn't break operation
+
 
 def classify_file(file_path: str, config, ollama_client=None) -> Dict[str, Any]:
     """
@@ -447,7 +678,7 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-    from config import get_config
+    from src.config import get_config
     from ai.ollama_client import OllamaClient
 
     config = get_config()

@@ -28,16 +28,14 @@ def test_json_extraction():
     """Test JSON extraction from various malformed responses."""
     print("\n=== Testing JSON Extraction ===")
 
-    # Mock AgentAnalyzer for testing extraction
-    class MockAnalyzer:
-        def _extract_json_from_text(self, text):
-            # Import the method from AgentAnalyzer
-            from src.agent.agent_analyzer import AgentAnalyzer
-            # Use a dummy instance just to call the method
-            dummy = type('obj', (object,), {})()
-            return AgentAnalyzer._extract_json_from_text(dummy, text)
+    # Create AgentAnalyzer instance for testing extraction
+    from src.agent.agent_analyzer import AgentAnalyzer
+    from src.config import get_config
+    from src.core.db_manager import DatabaseManager
 
-    analyzer = MockAnalyzer()
+    config = get_config()
+    db = DatabaseManager()
+    analyzer = AgentAnalyzer(config, db)
 
     test_cases = [
         {
@@ -180,14 +178,14 @@ def test_path_sanitization():
     """Test path sanitization."""
     print("\n=== Testing Path Sanitization ===")
 
-    # Mock AgentAnalyzer for testing sanitization
-    class MockAnalyzer:
-        def _sanitize_path(self, path):
-            from src.agent.agent_analyzer import AgentAnalyzer
-            dummy = type('obj', (object,), {})()
-            return AgentAnalyzer._sanitize_path(dummy, path)
+    # Create AgentAnalyzer instance for testing sanitization
+    from src.agent.agent_analyzer import AgentAnalyzer
+    from src.config import get_config
+    from src.core.db_manager import DatabaseManager
 
-    analyzer = MockAnalyzer()
+    config = get_config()
+    db = DatabaseManager()
+    analyzer = AgentAnalyzer(config, db)
 
     test_cases = [
         {

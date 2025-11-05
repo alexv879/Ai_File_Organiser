@@ -21,7 +21,6 @@ import re
 import hashlib
 from pathlib import Path
 from typing import Dict, Any, Optional
-import jsonschema
 from jsonschema import validate, ValidationError
 
 # Import existing components for reuse (HIGH #6 FIX - use TextExtractor instead of FileClassifier)
@@ -110,7 +109,7 @@ class AgentAnalyzer:
             # If loading fails, continue without examples
             return []
 
-    def analyze_file(self, file_path: str, policy: dict = None,
+    def analyze_file(self, file_path: str, policy: Optional[Dict[str, Any]] = None,
                      max_snippet_chars: int = 1000) -> Dict[str, Any]:
         """
         Perform deep analysis of a file using the agent.
@@ -244,9 +243,9 @@ class AgentAnalyzer:
             self.logger.agent_action(
                 action=safe_plan.get('action', 'none'),
                 file_path=str(path),
-                destination=safe_plan.get('suggested_path'),
-                blocked=blocked,
-                block_reason=safe_plan.get('block_reason')
+                destination=safe_plan.get('suggested_path') or '',
+                blocked=bool(blocked),
+                block_reason=safe_plan.get('block_reason') or ''
             )
 
             # Log to database if available
@@ -287,7 +286,7 @@ class AgentAnalyzer:
             return self._error_response(f'Agent analysis error: {str(e)}')
 
     def _construct_agent_prompt(self, filename: str, extension: str, size_bytes: int,
-                                text_snippet: str, recent_paths: list, policy: dict,
+                                text_snippet: str, recent_paths: list, policy: Optional[Dict[str, Any]],
                                 base_destination: str) -> str:
         """
         Construct the agent prompt with all context.
@@ -461,7 +460,7 @@ Provide your JSON classification:"""
 
         return None
 
-    def _parse_and_validate_response(self, response_text: str, raw_response_for_log: str = None) -> Dict[str, Any]:
+    def _parse_and_validate_response(self, response_text: str, raw_response_for_log: Optional[str] = None) -> Dict[str, Any]:
         """
         Parse Ollama response and validate against schema with retry logic.
 
@@ -586,6 +585,9 @@ Return only valid JSON matching this schema:
                     raw_response=raw_response_for_log
                 )
 
+        # Should never reach here, but return error response for safety
+        return self._error_response('Max retries exceeded', raw_response=raw_response_for_log)
+
     def _check_source_blacklist(self, file_path: str) -> tuple:
         """
         Check if source file is in blacklist (CRITICAL FIX #4).
@@ -615,7 +617,7 @@ Return only valid JSON matching this schema:
         return False, ''
 
     def _apply_safety_checks(self, plan: Dict[str, Any], file_path: str,
-                            policy: dict = None) -> Dict[str, Any]:
+                            policy: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Apply safety checks to the agent plan.
 
@@ -747,7 +749,7 @@ Return only valid JSON matching this schema:
 
         return sanitized
 
-    def _error_response(self, error_msg: str, raw_response: str = None) -> Dict[str, Any]:
+    def _error_response(self, error_msg: str, raw_response: Optional[str] = None) -> Dict[str, Any]:
         """
         Create a standardized error response.
 
@@ -779,7 +781,7 @@ Return only valid JSON matching this schema:
 
 
 def analyze_file(file_path: str, config, ollama_client, db_manager=None,
-                policy: dict = None) -> Dict[str, Any]:
+                policy: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Convenience function to analyze a single file with the agent.
 

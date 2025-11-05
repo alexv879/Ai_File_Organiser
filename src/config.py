@@ -20,7 +20,7 @@ License: Proprietary (200-key limited release)
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 
 class Config:
@@ -32,7 +32,7 @@ class Config:
         _config (Dict[str, Any]): Loaded configuration dictionary
     """
 
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: Optional[str] = None):
         """
         Initialize configuration manager.
 
@@ -166,6 +166,22 @@ class Config:
         return self.get("classification.enable_ai", True)
 
     @property
+    def safety_ai_enabled(self) -> bool:
+        """Whether the SafetyGuardian should call the AI reasoning stage (ollama).
+
+        Default: False (opt-in). Use config key `safety.ai_reasoning.enabled`.
+        """
+        return self.get("safety.ai_reasoning.enabled", False)
+
+    @property
+    def safety_ai_timeout_seconds(self) -> int:
+        """Timeout (seconds) to use when calling the AI reasoning endpoint.
+
+        Default: 15 seconds. Use config key `safety.ai_reasoning.timeout_seconds`.
+        """
+        return int(self.get("safety.ai_reasoning.timeout_seconds", 15))
+
+    @property
     def text_extract_limit(self) -> int:
         """Get maximum characters to extract from files for AI analysis."""
         return self.get("classification.text_extract_limit", 500)
@@ -287,7 +303,7 @@ class Config:
 
         return False
 
-    def get_folder_policy(self, path: str) -> Dict[str, Any]:
+    def get_folder_policy(self, path: str) -> Optional[Dict[str, Any]]:
         """
         Get the most specific folder policy for a given path.
 
@@ -357,10 +373,10 @@ class Config:
 
 
 # Global configuration instance
-_config_instance: Config = None
+_config_instance: Optional[Config] = None
 
 
-def get_config(config_path: str = None) -> Config:
+def get_config(config_path: Optional[str] = None) -> Config:
     """
     Get or create global configuration instance.
 

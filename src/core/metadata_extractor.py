@@ -44,19 +44,25 @@ except ImportError:
     HAS_PYPDF2 = False
     logger.warning("PyPDF2 not installed - PDF metadata extraction disabled")
 
+# Mutagen for audio/video metadata extraction
+# Reference: Mutagen library for multimedia tag reading
 try:
-    from mutagen import File as MutagenFile
+    from mutagen._file import File as MutagenFile  # type: ignore
     HAS_MUTAGEN = True
 except ImportError:
+    MutagenFile = None  # type: ignore
     HAS_MUTAGEN = False
     logger.warning("Mutagen not installed - audio/video metadata extraction disabled")
 
+# Python-docx for Word document metadata
+# Reference: python-docx library for .docx file manipulation
 try:
-    from docx import Document as DocxDocument
+    from docx import Document as DocxDocument  # type: ignore
     HAS_DOCX = True
 except ImportError:
+    DocxDocument = None  # type: ignore
     HAS_DOCX = False
-    logger.warning("python-docx not installed - DOCX metadata extraction disabled")
+    logger.warning("python-docx not installed - Word document metadata extraction disabled")
 
 
 class AdvancedMetadataExtractor:
@@ -97,34 +103,30 @@ class AdvancedMetadataExtractor:
         
         Args:
             file_path: Path to file
-            
+        
         Returns:
             Dict with all extracted metadata
         """
         if not os.path.exists(file_path):
             return {"error": "File not found"}
         
-        file_path = Path(file_path)
-        extension = file_path.suffix.lower().lstrip('.')
+        file_path_obj = Path(file_path)
+        extension = file_path_obj.suffix.lower().lstrip('.')
         
         # Start with basic metadata (always available)
-        metadata = self._extract_basic_metadata(file_path)
+        metadata = self._extract_basic_metadata(file_path_obj)
         
         # Add type-specific metadata
         if extension in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff']:
-            metadata.update(self._extract_image_metadata(file_path))
-        
+            metadata.update(self._extract_image_metadata(file_path_obj))
         elif extension == 'pdf':
-            metadata.update(self._extract_pdf_metadata(file_path))
-        
+            metadata.update(self._extract_pdf_metadata(file_path_obj))
         elif extension in ['mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a', 'wma']:
-            metadata.update(self._extract_audio_metadata(file_path))
-        
+            metadata.update(self._extract_audio_metadata(file_path_obj))
         elif extension in ['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm']:
-            metadata.update(self._extract_video_metadata(file_path))
-        
+            metadata.update(self._extract_video_metadata(file_path_obj))
         elif extension == 'docx':
-            metadata.update(self._extract_docx_metadata(file_path))
+            metadata.update(self._extract_docx_metadata(file_path_obj))
         
         # Add organization hints based on metadata
         metadata['organization_hints'] = self._generate_organization_hints(metadata)
@@ -164,11 +166,11 @@ class AdvancedMetadataExtractor:
         try:
             with Image.open(file_path) as img:
                 metadata['dimensions'] = f"{img.width}x{img.height}"
-                metadata['format'] = img.format
+                metadata['format'] = str(img.format) if img.format is not None else ''
                 metadata['mode'] = img.mode
                 
                 # Extract EXIF data
-                exif_data = img._getexif()
+                exif_data = getattr(img, '_getexif', lambda: None)()
                 if exif_data:
                     exif = {}
                     
@@ -181,18 +183,18 @@ class AdvancedMetadataExtractor:
                             for gps_tag in value:
                                 gps_tag_name = GPSTAGS.get(gps_tag, gps_tag)
                                 gps_data[gps_tag_name] = value[gps_tag]
-                            metadata['gps'] = gps_data
+                            metadata['gps'] = str(gps_data)
                             
                             # Extract location hint
                             if 'GPSLatitude' in gps_data and 'GPSLongitude' in gps_data:
-                                metadata['has_location'] = True
+                                metadata['has_location'] = str(True)
                         
                         # Store important EXIF tags
                         elif tag in ['DateTime', 'DateTimeOriginal', 'DateTimeDigitized']:
                             try:
-                                metadata['date_taken'] = datetime.strptime(
+                                metadata['date_taken'] = str(datetime.strptime(
                                     str(value), '%Y:%m:%d %H:%M:%S'
-                                )
+                                ))
                             except:
                                 metadata['date_taken_raw'] = str(value)
                         
@@ -225,7 +227,7 @@ class AdvancedMetadataExtractor:
             with open(file_path, 'rb') as f:
                 pdf = PyPDF2.PdfReader(f)
                 
-                metadata['pages'] = len(pdf.pages)
+                metadata['pages'] = str(len(pdf.pages))
                 
                 # Extract document info
                 info = pdf.metadata
@@ -244,13 +246,13 @@ class AdvancedMetadataExtractor:
                     # Parse dates
                     if info.creation_date:
                         try:
-                            metadata['creation_date'] = info.creation_date
+                            metadata['creation_date'] = str(info.creation_date)
                         except:
                             metadata['creation_date_raw'] = str(info.creation_date)
                     
                     if info.modification_date:
                         try:
-                            metadata['modification_date'] = info.modification_date
+                            metadata['modification_date'] = str(info.modification_date)
                         except:
                             metadata['modification_date_raw'] = str(info.modification_date)
                 
@@ -287,11 +289,13 @@ class AdvancedMetadataExtractor:
         metadata = {'metadata_type': 'audio'}
         
         try:
+            if MutagenFile is None:
+                return metadata
             audio = MutagenFile(str(file_path))
             if audio:
                 # Duration
                 if hasattr(audio.info, 'length'):
-                    metadata['duration_seconds'] = int(audio.info.length)
+                    metadata['duration_seconds'] = str(int(audio.info.length))
                     metadata['duration_formatted'] = self._format_duration(audio.info.length)
                 
                 # Bitrate
@@ -337,11 +341,13 @@ class AdvancedMetadataExtractor:
         metadata = {'metadata_type': 'video'}
         
         try:
+            if MutagenFile is None:
+                return metadata
             video = MutagenFile(str(file_path))
             if video and hasattr(video, 'info'):
                 # Duration
                 if hasattr(video.info, 'length'):
-                    metadata['duration_seconds'] = int(video.info.length)
+                    metadata['duration_seconds'] = str(int(video.info.length))
                     metadata['duration_formatted'] = self._format_duration(video.info.length)
                 
                 # Resolution (if available)
@@ -363,8 +369,12 @@ class AdvancedMetadataExtractor:
         return metadata
     
     def _extract_docx_metadata(self, file_path: Path) -> Dict[str, Any]:
-        """Extract metadata from DOCX files"""
-        if not HAS_DOCX:
+        """
+        Extract metadata from DOCX files.
+        Uses python-docx library to read Office Open XML properties.
+        Reference: ISO/IEC 29500 (Office Open XML standard)
+        """
+        if not HAS_DOCX or DocxDocument is None:
             return {}
         
         metadata = {'metadata_type': 'docx'}
@@ -388,9 +398,9 @@ class AdvancedMetadataExtractor:
             if core_props.last_modified_by:
                 metadata['last_modified_by'] = core_props.last_modified_by
             if core_props.created:
-                metadata['created'] = core_props.created
+                metadata['created'] = str(core_props.created)
             if core_props.modified:
-                metadata['modified'] = core_props.modified
+                metadata['modified'] = str(core_props.modified)
             
             # Extract first paragraph for classification
             if doc.paragraphs:

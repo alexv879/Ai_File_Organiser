@@ -1,0 +1,92 @@
+{
+  "watched_folders": [
+    "C:\\Users\\alexa/Desktop",
+    "C:\\Users\\alexa/Downloads"
+  ],
+  "base_destination": "C:\\Users\\alexa/Documents",
+  "path_blacklist": [
+    "C:/Windows",
+    "C:/Program Files",
+    "C:/Program Files (x86)",
+    "~/AppData"
+  ],
+  "folder_policies": {},
+  "destination_rules": {
+    "pdf": "Documents/PDFs/",
+    "jpg": "Pictures/",
+    "jpeg": "Pictures/",
+    "png": "Pictures/",
+    "gif": "Pictures/",
+    "docx": "Documents/Word/",
+    "doc": "Documents/Word/",
+    "xlsx": "Documents/Excel/",
+    "xls": "Documents/Excel/",
+    "pptx": "Documents/PowerPoint/",
+    "txt": "Documents/Text/",
+    "zip": "Downloads/Archives/",
+    "rar": "Downloads/Archives/",
+    "7z": "Downloads/Archives/",
+    "mp4": "Videos/",
+    "avi": "Videos/",
+    "mkv": "Videos/",
+    "mp3": "Music/",
+    "wav": "Music/",
+    "flac": "Music/"
+  },
+  "ollama_model": "qwen2.5:7b-instruct",
+  "ollama_base_url": "http://localhost:11434",
+  "ollama_timeout": 60,
+  "safety": {
+    "ai_reasoning": {
+      "enabled": false,
+      "timeout_seconds": 15
+    }
+  },
+  "auto_mode": false,
+  "dry_run": true,
+  "time_estimates": {
+    "move": 0.5,
+    "rename": 0.3,
+    "delete": 0.2,
+    "archive": 0.4
+  },
+  "classification": {
+    "enable_ai": true,
+    "text_extract_limit": 500,
+    "fallback_to_rules": true
+  },
+  "duplicates": {
+    "hash_algorithm": "sha1",
+    "auto_delete": false
+  },
+  "license": {
+    "api_endpoint": "https://yourdomain.com/api/verify-license",
+    "offline_mode": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "data/logs/app.log"
+  },
+  "performance": {
+    "quantization_level": "balanced",
+    "processing_strategy": "batch",
+    "batch_size": 100,
+    "max_workers": 4,
+    "enable_metadata_cache": true,
+    "cache_ttl_hours": 24,
+    "cache_dir": ".cache/metadata",
+    "max_file_size_mb": 100,
+    "timeout_seconds": 5
+  },
+  "metadata_extraction": {
+    "enable_advanced_metadata": true,
+    "respect_quantization": true,
+    "auto_optimize": true
+  },
+  "storage_management": {
+    "strategy": "balanced",
+    "min_free_space_gb": 10,
+    "prefer_same_drive": true
+  },
+  "safety_notice_shown": true
+}

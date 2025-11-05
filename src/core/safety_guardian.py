@@ -135,6 +135,53 @@ class SafetyGuardian:
         self.config = config
         self.ollama_client = ollama_client
         self.blocked_operations = []  # Track blocked operations for audit
+        # Cache for custom protections
+        self._custom_protections: Optional[Dict[str, Any]] = None
+        # Initialize protected patterns and known app folders
+        self.PROTECTED_PATTERNS = [
+            'c:\\windows',
+            'c:\\program files',
+            'c:\\program files (x86)',
+            'c:\\programdata',
+            '\\steam',
+            '\\steamapps',
+            '\\steamlibrary',
+            '\\epic games',
+            '\\epicgames',
+            '\\origin',
+            '\\gog galaxy',
+            '\\gog games',
+            '\\xboxgames',
+            '\\appdata',
+            '\\ubisoft',
+            '\\battle.net',
+            '\\riot games',
+            'microsoft visual studio',
+            'jetbrains',
+            'nodejs',
+            '\\games\\',
+            '\\development\\',
+        ]
+        self.KNOWN_APP_FOLDERS = {
+            'steam', 'steamapps', 'steamlibrary',
+            'epic games', 'epicgames',
+            'origin', 'origin games',
+            'gog galaxy', 'gog', 'gog games',
+            'ubisoft', 'uplay', 'ubisoft game launcher',
+            'battle.net', 'blizzard',
+            'riot games', 'riot',
+            'microsoft games', 'xbox', 'xboxgames',
+        }
+        # Protected extensions (system/application/game)
+        self.PROTECTED_EXTENSIONS = {
+            # System / executables
+            '.exe', '.dll', '.sys', '.ocx', '.drv', '.msi', '.bat', '.cmd',
+            # Game engines and data
+            '.pak', '.uasset', '.umap', '.assets', '.bundle',
+            '.wad', '.pk3', '.bsp', '.vpk', '.esm', '.esp', '.forge', '.jar',
+            # Shaders / graphics
+            '.shader', '.hlsl', '.glsl', '.dds', '.material',
+        }
         
     def evaluate_operation(self, 
                           source_path: str,
@@ -181,6 +228,23 @@ class SafetyGuardian:
         # LAYER 3: Application Integrity
         app_threats = self._check_application_integrity(source_path, destination_path)
         threats.extend(app_threats)
+
+        # New comprehensive application/game protection check (multi-layer)
+        try:
+            ok, reason = self.is_file_safe_to_modify(Path(source_path))
+            if not ok:
+                severity = "critical" if "Protected" in reason or "application" in reason.lower() else "high"
+                threats.append((
+                    ThreatType.APPLICATION_FILE,
+                    severity,
+                    f"{reason}: {source_path}"
+                ))
+        except Exception:
+            threats.append((
+                ThreatType.APPLICATION_FILE,
+                "high",
+                "Safety check error while verifying application/game protections"
+            ))
         
         # LAYER 4: Data Loss Prevention
         data_threats = self._check_data_loss_prevention(source_path, destination_path, operation)
@@ -197,11 +261,16 @@ class SafetyGuardian:
         # Determine risk level based on threats
         risk_level = self._calculate_risk_level(threats, warnings)
         
-        # LAYER 7: AI Reasoning Evaluation (if available and needed)
+        # LAYER 7: AI Reasoning Evaluation (if available, enabled in config, and needed)
         ai_evaluation = None
-        if self.ollama_client and risk_level in [RiskLevel.CAUTION, RiskLevel.HIGH_RISK]:
+        try:
+            ai_gate_enabled = bool(self.config.get('safety.ai_reasoning.enabled', False))
+        except Exception:
+            ai_gate_enabled = False
+
+        if self.ollama_client and ai_gate_enabled and risk_level in [RiskLevel.CAUTION, RiskLevel.HIGH_RISK]:
             ai_evaluation = self._ai_reasoning_check(
-                source_path, destination_path, operation, 
+                source_path, destination_path, operation,
                 classification, threats, warnings
             )
             
@@ -234,27 +303,296 @@ class SafetyGuardian:
         logger.info(f"[SAFETY GUARDIAN] Evaluation result: {risk_level.value} - {'APPROVED' if result['approved'] else 'BLOCKED'}")
         
         return result
+
+    # ========================= APPLICATION/GAME PROTECTION LAYERS =========================
+    def load_custom_protections(self) -> Dict[str, Any]:
+        """Load or initialize custom protected paths/extensions and depth limit.
+
+        Returns a dict with keys: protected_paths (List[Path]),
+        protected_extensions (Set[str]), scan_depth_limit (int)
+        """
+        if self._custom_protections is not None:
+            return self._custom_protections
+
+        config_dir = Path(__file__).parent.parent.parent / 'config'
+        config_dir.mkdir(exist_ok=True)
+        cfg_path = config_dir / 'protected_paths.json'
+        default = {
+            "protected_paths": [],
+            "protected_extensions": [],
+            "scan_depth_limit": 3
+        }
+        try:
+            if not cfg_path.exists():
+                cfg_path.write_text(json.dumps(default, indent=2), encoding='utf-8')
+                data = default
+            else:
+                data = json.loads(cfg_path.read_text(encoding='utf-8'))
+        except Exception:
+            data = default
+
+        protected_paths = []
+        for p in data.get('protected_paths', []):
+            try:
+                protected_paths.append(Path(p).expanduser().resolve())
+            except Exception:
+                continue
+
+        protected_exts = set(e.lower() if e.startswith('.') else f".{e.lower()}" for e in data.get('protected_extensions', []))
+        scan_depth_limit = int(data.get('scan_depth_limit', 3))
+
+        self._custom_protections = {
+            'protected_paths': protected_paths,
+            'protected_extensions': protected_exts,
+            'scan_depth_limit': scan_depth_limit,
+        }
+        return self._custom_protections
+
+    def contains_app_folder_name(self, path: Path) -> Optional[str]:
+        """Return matched known application/game folder name if found in path."""
+        try:
+            s = str(path).lower()
+            for name in self.KNOWN_APP_FOLDERS:
+                if name in s:
+                    return name
+        except Exception:
+            pass
+        return None
+
+    def is_protected_path(self, file_path: Path) -> bool:
+        """Layer 1: Path-based protection across all drives and patterns."""
+        try:
+            s = str(file_path).lower()
+            # Quick prefix checks for Windows critical dirs
+            for crit in self.CRITICAL_PATHS_WINDOWS:
+                try:
+                    if s.startswith(crit.lower()):
+                        return True
+                except Exception:
+                    continue
+
+            # Pattern checks
+            for pat in self.PROTECTED_PATTERNS:
+                if pat in s:
+                    return True
+
+            # Custom protected paths
+            custom = self.load_custom_protections()
+            for cp in custom['protected_paths']:
+                try:
+                    if file_path.resolve().as_posix().lower().startswith(cp.as_posix().lower()):
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            return True  # fail-safe
+        return False
+
+    def is_application_folder(self, folder_path: Path) -> bool:
+        """Layer 2: Detect if a folder likely contains an installed application/game."""
+        try:
+            if not folder_path.exists() or not folder_path.is_dir():
+                return False
+
+            # Check exe+dll presence
+            exe_count = sum(1 for p in folder_path.glob('*.exe'))
+            dll_count = sum(1 for p in folder_path.glob('*.dll'))
+            if exe_count > 0 and dll_count > 0:
+                return True
+
+            # Game engine indicators
+            indicators = ['UnrealEngine', 'UE4', 'UE5', 'Unity', 'Engine']
+            for ind in indicators:
+                if (folder_path / ind).exists():
+                    return True
+
+            # Files indicating engines
+            pak_count = len(list(folder_path.glob('*.pak')))
+            assets_count = len(list(folder_path.glob('*.assets')))
+            if pak_count >= 20 or assets_count >= 20:
+                return True
+
+            # Installer artifacts
+            if (folder_path / 'unins000.exe').exists() or (folder_path / 'uninstall.exe').exists():
+                return True
+
+            # Known app folder names in path
+            if self.contains_app_folder_name(folder_path):
+                return True
+        except Exception:
+            return True  # fail-safe
+        return False
+
+    def is_protected_file_type(self, file_path: Path) -> bool:
+        """Layer 4: File type protection independent of location."""
+        try:
+            ext = file_path.suffix.lower()
+            if ext in self.PROTECTED_EXTENSIONS:
+                return True
+            # Include custom protected extensions
+            custom = self.load_custom_protections()
+            if ext in custom['protected_extensions']:
+                return True
+        except Exception:
+            return True
+        return False
+
+    def has_application_siblings(self, file_path: Path) -> bool:
+        """Layer 5: Detect sibling indicators in the same folder."""
+        try:
+            parent = file_path.parent
+            if not parent.exists():
+                return False
+            exe_count = len(list(parent.glob('*.exe')))
+            dll_count = len(list(parent.glob('*.dll')))
+            if exe_count > 0 and dll_count > 0:
+                return True
+            # Engine bulk
+            if len(list(parent.glob('*.pak'))) > 10 or len(list(parent.glob('*.assets'))) > 10:
+                return True
+        except Exception:
+            return True
+        return False
+
+    def is_file_part_of_application(self, file_path: Path) -> bool:
+        """Layer 3: Context analysis by walking up to N parents."""
+        try:
+            custom = self.load_custom_protections()
+            depth_limit = max(1, int(custom.get('scan_depth_limit', 3)))
+            cur = file_path if file_path.is_dir() else file_path.parent
+            steps = 0
+            while True:
+                if self.is_protected_path(cur):
+                    return True
+                if self.is_application_folder(cur):
+                    return True
+                if steps >= 5 or steps >= depth_limit:
+                    break
+                if cur.parent == cur:
+                    break
+                cur = cur.parent
+                steps += 1
+        except Exception:
+            return True
+        return False
+
+    def is_file_safe_to_modify(self, file_path: Path) -> Tuple[bool, str]:
+        """Master safety check combining all layers for a single file path."""
+        try:
+            p = Path(file_path)
+            if self.is_protected_path(p):
+                return False, "Protected system/application path"
+            if self.is_protected_file_type(p):
+                return False, "Protected file type (.exe, .dll, game data, etc.)"
+            if self.is_file_part_of_application(p):
+                return False, "Part of installed application"
+            if self.has_application_siblings(p):
+                return False, "In application folder (has .exe and .dll files)"
+            return True, "Safe to modify"
+        except Exception as e:
+            return False, f"Safety check failed: {e}"
+
+    # Public helpers for integration per spec
+    def check_application_file(self, file_path: Path) -> Tuple[bool, str]:
+        """Check if file is part of an application; returns (safe, reason)."""
+        return self.is_file_safe_to_modify(file_path)
+
+    def get_protected_locations(self) -> List[Path]:
+        """Return list of protected base locations including custom ones."""
+        locations: List[Path] = []
+        # From constants
+        for p in self.CRITICAL_PATHS_WINDOWS:
+            try:
+                locations.append(Path(p))
+            except Exception:
+                continue
+        # Common app platform roots
+        common = [
+            'C:\\Program Files\\Steam', 'C:\\Program Files (x86)\\Steam',
+            'C:\\Program Files\\Epic Games', 'C:\\Program Files (x86)\\Epic Games',
+            'C:\\Program Files\\Origin', 'C:\\Program Files\\GOG Galaxy',
+            'C:\\XboxGames'
+        ]
+        for p in common:
+            locations.append(Path(p))
+        # Custom
+        custom = self.load_custom_protections()
+        locations.extend(custom['protected_paths'])
+        return locations
+
+    def validate_scan_folder(self, folder_path: Path) -> Tuple[bool, str]:
+        """Validate user-specified scan folder against protections; may prompt upstream.
+
+        Note: Interactive prompts are not handled here; caller should act on the reason.
+        """
+        try:
+            if self.is_protected_path(folder_path):
+                return False, "Protected system/application folder"
+            # .exe count (non-recursive)
+            exe_count = len([p for p in folder_path.glob('*.exe') if p.is_file()])
+            if exe_count > 0:
+                return False, f"WARNING: {folder_path} contains {exe_count} .exe files"
+            matched = self.contains_app_folder_name(folder_path)
+            if matched:
+                return False, f"WARNING: This appears to be an application folder (detected: {matched})"
+            return True, "Safe to scan"
+        except Exception as e:
+            return False, f"Validation error: {e}"
     
     def _check_path_security(self, _source: str, destination: str) -> List[Tuple[ThreatType, str, str]]:
-        """Check for path traversal and security issues"""
+        """
+        Check for path traversal and security issues including symlink cycle detection.
+
+        This function implements multiple layers of path security validation:
+        1. Path traversal pattern detection (".." in paths)
+        2. Base directory escape prevention (paths must stay within base_destination)
+        3. Symlink cycle detection (prevents infinite loops)
+        4. Suspicious character detection (null bytes, control characters)
+
+        Args:
+            _source: Source file path (unused but kept for API consistency)
+            destination: Destination path to validate
+
+        Returns:
+            List of (ThreatType, severity, message) tuples for detected threats
+        """
         threats = []
-        
-        # Check for path traversal patterns
+
+        # Check for path traversal patterns - simple but effective first line of defense
+        # Why: ".." can be used to escape intended directories (e.g., "../../../etc/passwd")
         if ".." in destination:
             threats.append((
                 ThreatType.PATH_TRAVERSAL,
                 "critical",
                 f"Destination contains '..' (path traversal attack pattern): {destination}"
             ))
-        
+
         # Check for absolute paths escaping base destination
         dest_path = Path(destination)
         if dest_path.is_absolute():
             try:
+                # Resolve base destination to canonical absolute path
+                # Why: expanduser() handles ~, resolve() handles symlinks and relative paths
                 base_dest = Path(self.config.base_destination).expanduser().resolve()
-                dest_resolved = dest_path.resolve()
-                
-                # Verify destination is within base_destination
+
+                # CRITICAL FIX: Symlink cycle detection with max depth
+                # Why: Circular symlinks can cause infinite loops crashing the application
+                # Reference: https://docs.python.org/3/library/pathlib.html#pathlib.Path.resolve
+                try:
+                    # resolve(strict=False) doesn't require path to exist, but still detects cycles
+                    # Python raises RuntimeError if it encounters a symlink loop during resolution
+                    dest_resolved = dest_path.resolve(strict=False)
+                except RuntimeError as cycle_err:
+                    threats.append((
+                        ThreatType.CIRCULAR_REFERENCE,
+                        "critical",
+                        f"Symlink cycle detected in path: {destination} - {str(cycle_err)}"
+                    ))
+                    return threats  # Early return - don't process further if cycle detected
+
+                # Verify destination is within base_destination using relative_to()
+                # Why: This prevents path traversal even if paths are absolute
+                # Example: /home/user/docs/../../etc/passwd would be detected here
                 try:
                     dest_resolved.relative_to(base_dest)
                 except ValueError:
@@ -263,14 +601,24 @@ class SafetyGuardian:
                         "critical",
                         f"Destination escapes base directory: {destination} is outside {base_dest}"
                     ))
+            except RuntimeError as e:
+                # Catch RuntimeError separately (symlink resolution issues)
+                threats.append((
+                    ThreatType.CIRCULAR_REFERENCE,
+                    "critical",
+                    f"Symlink resolution error: {str(e)}"
+                ))
             except Exception as e:
+                # Catch all other exceptions (filesystem errors, permission issues, etc.)
                 threats.append((
                     ThreatType.INVALID_DESTINATION,
                     "high",
                     f"Cannot validate destination path: {e}"
                 ))
-        
+
         # Check for suspicious characters in paths
+        # Why: Control characters and null bytes can be used in injection attacks
+        # Example: "file.txt\x00.pdf" might bypass extension checks in some systems
         suspicious_chars = ['\\x00', '\n', '\r', '\t']
         for char in suspicious_chars:
             if char in destination:
@@ -279,7 +627,7 @@ class SafetyGuardian:
                     "critical",
                     f"Destination contains suspicious character: {repr(char)}"
                 ))
-        
+
         return threats
     
     def _check_system_file_protection(self, source: str, _destination: str) -> List[Tuple[ThreatType, str, str]]:
@@ -478,7 +826,7 @@ class SafetyGuardian:
         
         return warnings
     
-    def _check_permissions(self, source: str, _destination: str) -> List[Tuple[ThreatType, str, str]]:
+    def _check_permissions(self, source: str, destination: str) -> List[Tuple[ThreatType, str, str]]:
         """Check file permissions and access rights"""
         threats = []
 
@@ -572,16 +920,27 @@ Your evaluation:"""
         
         try:
             import requests
-            
+
+            # Respect configured timeout (fallback to 30s)
+            timeout_seconds = 30
+            try:
+                timeout_seconds = int(self.config.get('safety.ai_reasoning.timeout_seconds', 30))
+            except Exception:
+                timeout_seconds = 30
+
+            # Build target URL and model
+            base_url = getattr(self.ollama_client, 'base_url', None) or self.config.get('ollama_base_url')
+            model = getattr(self.ollama_client, 'model', None) or self.config.get('ollama_model')
+
             response = requests.post(
-                f"{self.ollama_client.base_url}/api/generate",
+                f"{base_url}/api/generate",
                 json={
-                    "model": self.ollama_client.model,
+                    "model": model,
                     "prompt": prompt,
                     "stream": False,
                     "format": "json"
                 },
-                timeout=30
+                timeout=timeout_seconds
             )
             
             if response.status_code == 200:
@@ -768,7 +1127,7 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
     
-    from config import get_config
+    from src.config import get_config
     
     config = get_config()
     guardian = SafetyGuardian(config)

@@ -156,7 +156,7 @@ fetch('/api/files/deep-analyze', {
 ```json
 {
   "ollama_base_url": "http://localhost:11434",
-  "ollama_model": "llama3",
+  "ollama_model": "qwen2.5:7b-instruct",
   "base_destination": "~/Documents",
   "path_blacklist": [],
   "folder_policies": {}
@@ -165,13 +165,13 @@ fetch('/api/files/deep-analyze', {
 
 ### Recommended Models
 
-- **Llama 3 13B**: Best reasoning for on-device (if you have RAM)
-- **Llama 3 8B**: Good balance of speed and quality
-- **Llama 2 7B**: Lighter option for constrained machines
+- **Qwen 2.5 7B Instruct**: Best for structured tasks and JSON output (recommended)
+- **Llama 3.1 8B Instruct**: Excellent reasoning and instruction following
+- **Mistral 7B Instruct**: Good balance of speed and quality
 
 Install with:
 ```bash
-ollama pull llama3
+ollama pull qwen2.5:7b-instruct
 ```
 
 ## Usage Examples
@@ -250,7 +250,7 @@ curl http://localhost:11434/api/tags
 ### "Schema validation failed"
 
 The model's response didn't match the JSON schema. Try:
-- Use a more capable model (llama3 vs llama2)
+- Use a more capable model (qwen2.5:7b-instruct or llama3.1:8b-instruct)
 - Check model is instruction-tuned
 - Increase `timeout` in OllamaClient if model is slow
 

@@ -5,7 +5,10 @@ Copyright (c) 2025 Alexandru Emanuel Vasile. All rights reserved.
 Proprietary Software - 200-Key Limited Release License
 
 This module monitors specified directories for new or modified files using
-the watchdog library. Detected files are queued for classification and processing.
+the watchdog library (cross-platform filesystem events monitoring).
+
+Reference: watchdog library for filesystem event monitoring
+Reference: inotify (Linux), FSEvents (macOS), ReadDirectoryChangesW (Windows)
 
 NOTICE: This software is proprietary and confidential.
 See LICENSE.txt for full terms and conditions.
@@ -17,11 +20,34 @@ License: Proprietary (200-key limited release)
 import time
 import threading
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, TYPE_CHECKING
 from queue import Queue
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileSystemEvent
+
+# Watchdog for filesystem monitoring
+# Reference: watchdog library for cross-platform file system events
+try:
+    from watchdog.observers import Observer  # type: ignore
+    from watchdog.events import FileSystemEventHandler, FileSystemEvent  # type: ignore
+    WATCHDOG_SUPPORT = True
+except ImportError:
+    # Fallback types for when watchdog is not installed
+    if TYPE_CHECKING:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler, FileSystemEvent
+    else:
+        Observer = None  # type: ignore
+        FileSystemEventHandler = object  # type: ignore
+        FileSystemEvent = object  # type: ignore
+    WATCHDOG_SUPPORT = False
+
+# Alternative: watchfiles (Rust-based, faster)
+try:
+    import watchfiles  # type: ignore
+    WATCHFILES_SUPPORT = True
+except ImportError:
+    WATCHFILES_SUPPORT = False
 
 
 class FileEventHandler(FileSystemEventHandler):
@@ -38,7 +64,7 @@ class FileEventHandler(FileSystemEventHandler):
         ignored_patterns (set): Filename patterns to ignore
     """
 
-    def __init__(self, callback: Callable = None, file_queue: Queue = None, blacklist: Optional[List[str]] = None, max_queue_size: int = 1000):
+    def __init__(self, callback: Optional[Callable] = None, file_queue: Optional[Queue] = None, blacklist: Optional[List[str]] = None, max_queue_size: int = 1000):
         """
         Initialize file event handler.
 
@@ -124,9 +150,12 @@ class FileEventHandler(FileSystemEventHandler):
         Args:
             event (FileSystemEvent): File system event
         """
-        if not event.is_directory and self._should_process(event.src_path):
+        src_path = event.src_path
+        if isinstance(src_path, (bytes, bytearray, memoryview)):
+            src_path = bytes(src_path).decode()
+        if not event.is_directory and self._should_process(src_path):
             # Wait for file to stabilize (check both time and size)
-            file_path = Path(event.src_path)
+            file_path = Path(src_path)
 
             try:
                 # Initial check
@@ -142,10 +171,10 @@ class FileEventHandler(FileSystemEventHandler):
                         time.sleep(1)
                         # Final check
                         if file_path.exists():
-                            self._process_file(event.src_path)
+                            self._process_file(src_path)
                     else:
                         # File size is stable
-                        self._process_file(event.src_path)
+                        self._process_file(src_path)
             except OSError:
                 # File may have been deleted or moved, skip it
                 pass
@@ -157,15 +186,18 @@ class FileEventHandler(FileSystemEventHandler):
         Args:
             event (FileSystemEvent): File system event
         """
+        src_path = event.src_path
+        if isinstance(src_path, (bytes, bytearray, memoryview)):
+            src_path = bytes(src_path).decode()
         # For modified files, we're more conservative to avoid processing
         # files that are being actively written to
-        if not event.is_directory and self._should_process(event.src_path):
+        if not event.is_directory and self._should_process(src_path):
             # Only process if file hasn't been modified in last 2 seconds
             # This prevents processing files that are still being written
             try:
-                path = Path(event.src_path)
+                path = Path(src_path)
                 if time.time() - path.stat().st_mtime > 2:
-                    self._process_file(event.src_path)
+                    self._process_file(src_path)
             except OSError:
                 pass
 
@@ -196,9 +228,11 @@ class FolderWatcher:
         observer (Observer): Watchdog observer instance
         file_queue (Queue): Queue of detected files
         processing_thread (threading.Thread): Background processing thread
+        executor (ThreadPoolExecutor): Thread pool for async processing
+        loop (asyncio.AbstractEventLoop): Event loop for async operations
     """
 
-    def __init__(self, folders: List[str], callback: Callable = None, config: object = None):
+    def __init__(self, folders: List[str], callback: Optional[Callable] = None, config: Optional[object] = None):
         """
         Initialize folder watcher.
 
@@ -209,17 +243,20 @@ class FolderWatcher:
         self.folders = [Path(f).expanduser().resolve() for f in folders]
         self.callback = callback
         self.config = config
-        self.observer: Optional[Observer] = None
+        self.observer = None  # type: ignore
         self.file_queue = Queue()
-        self.processing_thread: Optional[threading.Thread] = None
+        self.processing_thread = None
+        self.executor = None
+        self.loop = None
         self._running = False
 
-    def start(self, background: bool = True):
+    def start(self, background: bool = True, async_processing: bool = False):
         """
         Start watching folders.
 
         Args:
             background (bool): If True, run processing in background thread
+            async_processing (bool): If True, use async processing with ThreadPoolExecutor
         """
         if self._running:
             print("[Watcher] Already running")
@@ -228,8 +265,8 @@ class FolderWatcher:
         # Create event handler
         blacklist = []
         try:
-            if self.config and hasattr(self.config, 'path_blacklist'):
-                blacklist = self.config.path_blacklist
+            if self.config:
+                blacklist = getattr(self.config, 'path_blacklist', [])
         except Exception:
             blacklist = []
 
@@ -257,7 +294,11 @@ class FolderWatcher:
 
         # Start processing thread if background mode
         if background and self.callback:
-            self.processing_thread = threading.Thread(target=self._process_queue, daemon=True)
+            if async_processing:
+                self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="FileProcessor")
+                self.processing_thread = threading.Thread(target=self._process_queue_async, daemon=True)
+            else:
+                self.processing_thread = threading.Thread(target=self._process_queue, daemon=True)
             self.processing_thread.start()
 
     def stop(self):
@@ -270,6 +311,10 @@ class FolderWatcher:
         if self.observer:
             self.observer.stop()
             self.observer.join()
+
+        # Clean up executor
+        if self.executor:
+            self.executor.shutdown(wait=True)
 
         print("[Watcher] Stopped")
 
@@ -298,6 +343,46 @@ class FolderWatcher:
                 print(f"[Watcher] Queue processing error: {e}")
                 time.sleep(1)
 
+    def _process_queue_async(self):
+        """
+        Process files from queue asynchronously using ThreadPoolExecutor.
+        This runs in a separate thread and uses async processing for better performance.
+        """
+        while self._running:
+            try:
+                # Get file from queue with timeout
+                if not self.file_queue.empty():
+                    file_path = self.file_queue.get(timeout=1)
+
+                    # Process file asynchronously if executor is available
+                    if self.executor and self.callback and Path(file_path).exists():
+                        try:
+                            # Submit async processing task
+                            future = self.executor.submit(self._async_process_file, file_path)
+                            # Don't wait for completion - let it run in background
+                        except Exception as e:
+                            print(f"[Watcher] Error submitting async task for {file_path}: {e}")
+
+                    self.file_queue.task_done()
+                else:
+                    time.sleep(0.5)
+            except Exception as e:
+                print(f"[Watcher] Async queue processing error: {e}")
+                time.sleep(1)
+
+    def _async_process_file(self, file_path: str):
+        """
+        Process a single file asynchronously.
+
+        Args:
+            file_path (str): Path to the file to process
+        """
+        try:
+            if self.callback and Path(file_path).exists():
+                self.callback(file_path)
+        except Exception as e:
+            print(f"[Watcher] Error in async processing of {file_path}: {e}")
+
     def get_pending_count(self) -> int:
         """
         Get number of files waiting to be processed.
@@ -307,51 +392,137 @@ class FolderWatcher:
         """
         return self.file_queue.qsize()
 
-    def scan_existing_files(self, callback: Callable = None) -> List[str]:
+    def start_watchfiles(self, background: bool = True, async_processing: bool = False):
         """
-        Scan watched folders for existing files (one-time scan).
+        Start watching folders using watchfiles library (alternative to watchdog).
 
         Args:
-            callback (Callable, optional): Function to call for each found file
+            background (bool): If True, run processing in background thread
+            async_processing (bool): If True, use async processing with ThreadPoolExecutor
+        """
+        if not WATCHFILES_SUPPORT:
+            print("[Watcher] watchfiles library not available, falling back to watchdog")
+            return self.start(background, async_processing)
+
+        if self._running:
+            print("[Watcher] Already running")
+            return
+
+        self._running = True
+        print("[Watcher] Starting with watchfiles...")
+
+        # Initialize executor for async processing
+        if async_processing:
+            self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="FileProcessor")
+
+        # Start watchfiles in a separate thread
+        self.processing_thread = threading.Thread(target=self._watch_with_watchfiles, daemon=True)
+        self.processing_thread.start()
+
+        if background:
+            # Start processing thread
+            if async_processing:
+                processing_thread = threading.Thread(target=self._process_queue_async, daemon=True)
+            else:
+                processing_thread = threading.Thread(target=self._process_queue, daemon=True)
+            processing_thread.start()
+
+    def _watch_with_watchfiles(self):
+        """
+        Watch folders using watchfiles library.
+        """
+        try:
+            # Convert folders to strings
+            watch_paths = [str(f) for f in self.folders if f.exists() and f.is_dir()]
+
+            if not watch_paths:
+                print("[Watcher] No valid folders to watch")
+                return
+
+            print(f"[Watcher] Monitoring with watchfiles: {watch_paths}")
+
+            # Use watchfiles.watch for continuous monitoring
+            for changes in watchfiles.watch(*watch_paths, watch_filter=self._watchfiles_filter):
+                for change_type, file_path in changes:
+                    if change_type in (watchfiles.Change.added, watchfiles.Change.modified):
+                        if self._should_process_watchfiles(file_path):
+                            if self.callback:
+                                self.callback(file_path)
+
+        except Exception as e:
+            print(f"[Watcher] watchfiles error: {e}")
+        finally:
+            self._running = False
+
+    def _watchfiles_filter(self, change: watchfiles.Change, path: str) -> bool:
+        """
+        Filter function for watchfiles.
+
+        Args:
+            change: Type of change
+            path: File path
 
         Returns:
-            List[str]: List of found file paths
+            bool: Whether to process this change
         """
-        found_files = []
+        # Only process file additions and modifications
+        if change not in (watchfiles.Change.added, watchfiles.Change.modified):
+            return False
 
-        # Get blacklist from config (same as start() method)
+        # Check if it's a file
+        if not os.path.isfile(path):
+            return False
+
+        return self._should_process_watchfiles(path)
+
+    def _should_process_watchfiles(self, file_path: str) -> bool:
+        """
+        Check if file should be processed (watchfiles version).
+
+        Args:
+            file_path (str): Path to check
+
+        Returns:
+            bool: Whether to process
+        """
+        path = Path(file_path)
+
+        # Basic checks
+        if not path.exists() or path.is_dir():
+            return False
+
+        # Check file size (skip very large files)
+        try:
+            if path.stat().st_size > 100 * 1024 * 1024:  # 100MB limit
+                return False
+        except OSError:
+            return False
+
+        # Get blacklist from config
         blacklist = []
         try:
-            if self.config and hasattr(self.config, 'path_blacklist'):
-                blacklist = self.config.path_blacklist
+            if self.config:
+                blacklist = getattr(self.config, 'path_blacklist', [])
         except Exception:
             blacklist = []
 
-        for folder in self.folders:
-            if not folder.exists():
-                continue
+        # Check blacklist
+        try:
+            resolved = str(path.resolve())
+            for b in blacklist:
+                try:
+                    if os.path.commonpath([resolved, b]) == b:
+                        return False
+                except Exception:
+                    if resolved.lower().startswith(b.lower()):
+                        return False
+        except Exception:
+            pass
 
-            print(f"[Watcher] Scanning existing files in: {folder}")
-
-            # Walk through directory
-            for item in folder.rglob('*'):
-                if item.is_file():
-                    # Use same filtering logic as event handler with blacklist
-                    event_handler = FileEventHandler(blacklist=blacklist)
-                    if event_handler._should_process(str(item)):
-                        found_files.append(str(item))
-
-                        if callback:
-                            try:
-                                callback(str(item))
-                            except Exception as e:
-                                print(f"[Watcher] Error processing {item}: {e}")
-
-        print(f"[Watcher] Found {len(found_files)} existing files")
-        return found_files
+        return True
 
 
-def create_watcher(folders: List[str], callback: Callable = None) -> FolderWatcher:
+def create_watcher(folders: List[str], callback: Optional[Callable] = None) -> FolderWatcher:
     """
     Create and configure a folder watcher.
 

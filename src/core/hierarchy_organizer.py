@@ -218,7 +218,7 @@ class HierarchicalOrganizer:
         }
     
     def _determine_primary_category(self, filename: str, extension: str,
-                                    _metadata: Dict, classification: Dict) -> Tuple[str, str]:
+                                    metadata: Dict, classification: Dict) -> Tuple[str, str]:
         """Determine Level 1: Primary category"""
         
         # Try AI classification first
@@ -258,8 +258,8 @@ class HierarchicalOrganizer:
         return 'Documents', f"Primary: Documents (default for .{extension})"
     
     def _determine_secondary_category(self, primary: str, filename: str,
-                                     _extension: str, _metadata: Dict,
-                                     _classification: Dict) -> Tuple[Optional[str], str]:
+                                     extension: str, metadata: Dict,
+                                     classification: Dict) -> Tuple[Optional[str], str]:
         """Determine Level 2: Secondary category/subcategory"""
         
         primary_lower = primary.lower()
@@ -295,11 +295,12 @@ class HierarchicalOrganizer:
                 return subcat, f"Sub: {subcat} ({reason} detected)"
         
         # AI suggested subcategory
-        ai_suggested = classification.get('suggested_path', '')
-        if ai_suggested and '/' in ai_suggested:
-            parts = ai_suggested.split('/')
-            if len(parts) >= 2:
-                return parts[1], f"Sub: {parts[1]} (from AI suggestion)"
+        if classification:
+            ai_suggested = classification.get('suggested_path', '')
+            if ai_suggested and '/' in ai_suggested:
+                parts = ai_suggested.split('/')
+                if len(parts) >= 2:
+                    return parts[1], f"Sub: {parts[1]} (from AI suggestion)"
         
         # Default subcategories by primary
         defaults = {
@@ -319,7 +320,7 @@ class HierarchicalOrganizer:
         default = defaults.get(primary_lower, 'General')
         return default, f"Sub: {default} (default for {primary})"
     
-    def _determine_tertiary_level(self, _primary: str, _secondary: Optional[str],
+    def _determine_tertiary_level(self, primary: str, secondary: Optional[str],
                                   filename: str, metadata: Dict,
                                   classification: Dict) -> Tuple[Optional[str], str]:
         """Determine Level 3: Usually temporal organization"""
@@ -337,12 +338,15 @@ class HierarchicalOrganizer:
         month = date_info.get('month')
         week = date_info.get('week')
         
-        if self.temporal_pattern == 'quarterly' and quarter:
+        if year and self.temporal_pattern == 'quarterly' and quarter:
             return f"{year}/Q{quarter}", f"Temporal: {year}/Q{quarter} (quarterly)"
-        elif self.temporal_pattern == 'monthly' and month:
-            month_name = datetime(year, month, 1).strftime('%B')
-            return f"{year}/{month_name}", f"Temporal: {year}/{month_name} (monthly)"
-        elif self.temporal_pattern == 'weekly' and week:
+        elif year and month and self.temporal_pattern == 'monthly':
+            try:
+                month_name = datetime(int(year), int(month), 1).strftime('%B')
+                return f"{year}/{month_name}", f"Temporal: {year}/{month_name} (monthly)"
+            except (ValueError, TypeError):
+                return str(year), f"Temporal: {year} (yearly, invalid month)"
+        elif year and week and self.temporal_pattern == 'weekly':
             return f"{year}/Week-{week:02d}", f"Temporal: {year}/Week-{week:02d} (weekly)"
         elif year:
             return str(year), f"Temporal: {year} (yearly)"
@@ -435,7 +439,7 @@ class HierarchicalOrganizer:
         
         return None
     
-    def _extract_context(self, filename: str, _classification: Dict) -> Tuple[Optional[str], str]:
+    def _extract_context(self, filename: str, classification: Dict) -> Tuple[Optional[str], str]:
         """Extract context-based organization from filename"""
         
         # Common context patterns
@@ -454,8 +458,8 @@ class HierarchicalOrganizer:
         
         return None, ""
     
-    def _extract_client_name(self, filename: str, _metadata: Dict,
-                           _classification: Dict) -> Optional[str]:
+    def _extract_client_name(self, filename: str, metadata: Dict,
+                           classification: Dict) -> Optional[str]:
         """Extract client/company name from filename or content"""
         
         # Pattern: Client-<Name>, <Name>-Invoice, etc.
@@ -471,8 +475,8 @@ class HierarchicalOrganizer:
         
         return None
     
-    def _extract_project_name(self, filename: str, _metadata: Dict,
-                            _classification: Dict) -> Optional[str]:
+    def _extract_project_name(self, filename: str, metadata: Dict,
+                            classification: Dict) -> Optional[str]:
         """Extract project name from filename"""
         
         patterns = [
@@ -487,7 +491,7 @@ class HierarchicalOrganizer:
         
         return None
     
-    def _extract_event_name(self, filename: str, _metadata: Dict) -> Optional[str]:
+    def _extract_event_name(self, filename: str, metadata: Dict) -> Optional[str]:
         """Extract event name for photos/videos"""
         
         patterns = [

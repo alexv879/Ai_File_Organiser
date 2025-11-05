@@ -26,6 +26,100 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from contextlib import contextmanager
+import threading
+import queue
+import time
+
+
+class ConnectionPool:
+    """
+    Thread-safe SQLite connection pool for improved performance.
+
+    Maintains a pool of reusable database connections to reduce connection overhead.
+    """
+
+    def __init__(self, db_path: str, max_connections: int = 10, timeout: float = 30.0):
+        """
+        Initialize the connection pool.
+
+        Args:
+            db_path (str): Path to the SQLite database file
+            max_connections (int): Maximum number of connections in the pool
+            timeout (float): Timeout for acquiring connections from the pool
+        """
+        self.db_path = db_path
+        self.max_connections = max_connections
+        self.timeout = timeout
+        self._pool = queue.Queue(maxsize=max_connections)
+        self._lock = threading.Lock()
+        self._active_connections = 0
+
+        # Pre-populate the pool with initial connections
+        for _ in range(min(3, max_connections)):  # Start with 3 connections
+            self._create_connection()
+
+    def _create_connection(self) -> sqlite3.Connection:
+        """Create a new database connection with optimized settings."""
+        conn = sqlite3.connect(self.db_path, timeout=30.0, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging for better concurrency
+        conn.execute("PRAGMA synchronous=NORMAL")  # Balance between performance and safety
+        conn.execute("PRAGMA cache_size=10000")  # Increase cache size (10MB)
+        conn.execute("PRAGMA temp_store=MEMORY")  # Store temp tables in memory
+        conn.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O
+        return conn
+
+    def get_connection(self) -> sqlite3.Connection:
+        """
+        Get a connection from the pool.
+
+        Returns:
+            sqlite3.Connection: Database connection
+
+        Raises:
+            queue.Empty: If no connection is available within timeout
+        """
+        try:
+            return self._pool.get(timeout=self.timeout)
+        except queue.Empty:
+            with self._lock:
+                if self._active_connections < self.max_connections:
+                    self._active_connections += 1
+                    return self._create_connection()
+                else:
+                    raise queue.Empty("Connection pool exhausted")
+
+    def return_connection(self, conn: sqlite3.Connection) -> None:
+        """
+        Return a connection to the pool.
+
+        Args:
+            conn (sqlite3.Connection): Connection to return
+        """
+        try:
+            # Test if connection is still valid
+            conn.execute("SELECT 1").fetchone()
+            self._pool.put_nowait(conn)
+        except (sqlite3.Error, queue.Full):
+            # Connection is invalid or pool is full, close it
+            try:
+                conn.close()
+            except:
+                pass
+            with self._lock:
+                self._active_connections = max(0, self._active_connections - 1)
+
+    def close_all(self) -> None:
+        """Close all connections in the pool."""
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get_nowait()
+                conn.close()
+            except queue.Empty:
+                break
+
+        with self._lock:
+            self._active_connections = 0
 
 
 class DatabaseManager:
@@ -34,10 +128,11 @@ class DatabaseManager:
 
     Attributes:
         db_path (Path): Path to SQLite database file
-        connection (sqlite3.Connection): Active database connection
+        connection_pool (ConnectionPool): Connection pool for database operations
+        _prepared_statements (dict): Cache of prepared statements for performance
     """
 
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: Optional[str] = None):
         """
         Initialize database manager and create tables if they don't exist.
 
@@ -53,40 +148,142 @@ class DatabaseManager:
         # Ensure database directory exists
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.connection: Optional[sqlite3.Connection] = None
+        # Initialize connection pool
+        self.connection_pool = ConnectionPool(str(self.db_path))
+
+        # Cache for prepared statements
+        self._prepared_statements = {}
+
         self._initialize_database()
 
     @contextmanager
     def get_connection(self):
         """
-        Context manager for database connections.
+        Context manager for database connections using connection pool.
 
         Yields:
-            sqlite3.Connection: Database connection
+            sqlite3.Connection: Database connection from pool
 
         Example:
             >>> with db.get_connection() as conn:
             ...     cursor = conn.cursor()
             ...     cursor.execute("SELECT * FROM files_log")
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # Enable column access by name
+        conn = self.connection_pool.get_connection()
         try:
             yield conn
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            raise e
         finally:
-            conn.close()
+            self.connection_pool.return_connection(conn)
+
+    def _get_prepared_statement(self, sql: str) -> str:
+        """
+        Get or cache a prepared statement.
+
+        Args:
+            sql (str): SQL statement
+
+        Returns:
+            str: The SQL statement (cached for future use)
+        """
+        if sql not in self._prepared_statements:
+            self._prepared_statements[sql] = sql
+        return self._prepared_statements[sql]
+
+    def execute_batch(self, operations: List[Tuple[str, Tuple]]) -> List[Any]:
+        """
+        Execute multiple database operations in a single transaction.
+
+        Args:
+            operations (List[Tuple[str, Tuple]]): List of (sql, params) tuples
+
+        Returns:
+            List[Any]: List of results from each operation
+        """
+        results = []
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("BEGIN IMMEDIATE")
+                for sql, params in operations:
+                    prepared_sql = self._get_prepared_statement(sql)
+                    cursor.execute(prepared_sql, params)
+                    results.append(cursor.lastrowid or cursor.rowcount)
+                conn.commit()
+                return results
+            except Exception as e:
+                conn.rollback()
+                raise e
+
+    def bulk_log_actions(self, actions: List[Dict[str, Any]]) -> List[int]:
+        """
+        Bulk log multiple file actions efficiently.
+
+        Args:
+            actions (List[Dict]): List of action dictionaries
+
+        Returns:
+            List[int]: List of log IDs
+        """
+        operations = []
+        stats_updates = []
+
+        for action in actions:
+            # Prepare log insert operation
+            log_sql = """
+                INSERT INTO files_log
+                (filename, old_path, new_path, operation, time_saved, category, ai_suggested, user_approved,
+                 raw_response, model_name, prompt_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            log_params = (
+                action['filename'], action['old_path'], action.get('new_path'),
+                action['operation'], action.get('time_saved', 0.0), action.get('category'),
+                action.get('ai_suggested', False), action.get('user_approved', False),
+                action.get('raw_response'), action.get('model_name'), action.get('prompt_hash')
+            )
+            operations.append((log_sql, log_params))
+
+            # Prepare stats update operation
+            today = datetime.now().date()
+            stats_sql = """
+                INSERT INTO stats (stat_date, files_organised, time_saved_minutes, ai_classifications)
+                VALUES (?, 1, ?, ?)
+                ON CONFLICT(stat_date) DO UPDATE SET
+                    files_organised = files_organised + 1,
+                    time_saved_minutes = time_saved_minutes + ?,
+                    ai_classifications = ai_classifications + ?
+            """
+            time_saved = action.get('time_saved', 0.0)
+            ai_suggested = action.get('ai_suggested', False)
+            stats_params = (today, time_saved, 1 if ai_suggested else 0, time_saved, 1 if ai_suggested else 0)
+            operations.append((stats_sql, stats_params))
+
+        # Execute all operations in batch
+        results = self.execute_batch(operations)
+
+        # Extract log IDs (every other result, starting from index 0)
+        log_ids = []
+        for i in range(0, len(results), 2):
+            log_id = results[i]
+            if log_id is None:
+                raise RuntimeError("Failed to get log ID after batch insert")
+            log_ids.append(log_id)
+
+        return log_ids
 
     def _initialize_database(self) -> None:
         """
-        Create database tables if they don't exist.
-        Called automatically during initialization.
+        Create database tables and indexes if they don't exist.
+        Called automatically during initialization with performance optimizations.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Performance optimization pragmas
+            cursor.execute("PRAGMA foreign_keys = ON")  # Enable foreign key constraints
+            cursor.execute("PRAGMA busy_timeout = 30000")  # 30 second timeout
+            cursor.execute("PRAGMA wal_autocheckpoint = 1000")  # Auto-checkpoint WAL
+            cursor.execute("PRAGMA optimize")  # Run optimization
 
             # Files log table
             cursor.execute("""
@@ -159,10 +356,34 @@ class DatabaseManager:
                 )
             """)
 
-            # Create indexes for performance
+            # Deferred queue for age-based moves
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS deferred_queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_path TEXT NOT NULL,
+                    detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    eligible_at DATETIME NOT NULL,
+                    status TEXT DEFAULT 'queued', -- queued | processing | done | skipped | error
+                    last_error TEXT
+                )
+                """
+            )
+
+            # Create comprehensive indexes for performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_timestamp ON files_log(timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_category ON files_log(category)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_operation ON files_log(operation)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_ai_suggested ON files_log(ai_suggested)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_duplicates_hash ON duplicates(file_hash)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_duplicates_path ON duplicates(file_path)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_stats_date ON stats(stat_date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_deferred_status_eligible ON deferred_queue(status, eligible_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_deferred_eligible ON deferred_queue(eligible_at)")
+
+            # Composite indexes for common queries
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_timestamp_category ON files_log(timestamp, category)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_operation_timestamp ON files_log(operation, timestamp)")
 
             conn.commit()
 
@@ -209,6 +430,8 @@ class DatabaseManager:
                       raw_response, model_name, prompt_hash))
 
                 log_id = cursor.lastrowid
+                if log_id is None:
+                    raise RuntimeError("Failed to get log ID after insert")
 
                 # Update daily stats
                 today = datetime.now().date()
@@ -232,7 +455,7 @@ class DatabaseManager:
 
     def get_recent_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
-        Retrieve recent file operation logs.
+        Retrieve recent file operation logs with optimized query.
 
         Args:
             limit (int): Maximum number of logs to retrieve
@@ -240,19 +463,22 @@ class DatabaseManager:
         Returns:
             List[Dict]: List of log entries as dictionaries
         """
+        sql = self._get_prepared_statement("""
+            SELECT id, filename, old_path, new_path, operation, timestamp, time_saved, category,
+                   ai_suggested, user_approved, model_name
+            FROM files_log
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """)
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM files_log
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """, (limit,))
-
+            cursor.execute(sql, (limit,))
             return [dict(row) for row in cursor.fetchall()]
 
-    def search_logs(self, query: str = None, category: str = None, limit: int = 100) -> List[Dict[str, Any]]:
+    def search_logs(self, query: Optional[str] = None, category: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Search the files_log table by filename, old_path, new_path or category using simple LIKE queries.
+        Search the files_log table by filename, old_path, new_path or category using optimized queries.
 
         Args:
             query (str, optional): Substring to search for in filename/paths
@@ -284,15 +510,18 @@ class DatabaseManager:
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
             sql = f"""
-                SELECT * FROM files_log
+                SELECT id, filename, old_path, new_path, operation, timestamp, time_saved, category,
+                       ai_suggested, user_approved, model_name
+                FROM files_log
                 WHERE {where_sql}
                 ORDER BY timestamp DESC
                 LIMIT ?
             """
 
+            prepared_sql = self._get_prepared_statement(sql)
             params.append(limit)
 
-            cursor.execute(sql, tuple(params))
+            cursor.execute(prepared_sql, tuple(params))
             return [dict(row) for row in cursor.fetchall()]
 
     def undo_last_action(self) -> Optional[Dict[str, Any]]:
@@ -341,25 +570,28 @@ class DatabaseManager:
 
     def get_duplicates(self) -> List[Dict[str, List[str]]]:
         """
-        Get all sets of duplicate files grouped by hash.
+        Get all sets of duplicate files grouped by hash with optimized query.
 
         Returns:
             List[Dict]: List of duplicate groups, each containing file paths
         """
+        sql = self._get_prepared_statement("""
+            SELECT file_hash, GROUP_CONCAT(file_path, '|') as paths, file_size
+            FROM duplicates
+            GROUP BY file_hash
+            HAVING COUNT(*) > 1
+            ORDER BY file_size DESC
+        """)
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT file_hash, GROUP_CONCAT(file_path) as paths, file_size
-                FROM duplicates
-                GROUP BY file_hash
-                HAVING COUNT(*) > 1
-            """)
+            cursor.execute(sql)
 
             duplicates = []
             for row in cursor.fetchall():
                 duplicates.append({
                     'hash': row['file_hash'],
-                    'paths': row['paths'].split(','),
+                    'paths': row['paths'].split('|'),
                     'size': row['file_size']
                 })
 
@@ -459,7 +691,7 @@ class DatabaseManager:
 
     def get_stats(self, period: str = 'all') -> Dict[str, Any]:
         """
-        Get aggregated statistics for a given period.
+        Get aggregated statistics for a given period with optimized queries.
 
         Args:
             period (str): Time period ('today', 'week', 'month', 'all')
@@ -467,27 +699,50 @@ class DatabaseManager:
         Returns:
             Dict: Statistics including files organised, time saved, etc.
         """
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-
-            if period == 'today':
-                date_filter = "stat_date = date('now')"
-            elif period == 'week':
-                date_filter = "stat_date >= date('now', '-7 days')"
-            elif period == 'month':
-                date_filter = "stat_date >= date('now', '-30 days')"
-            else:  # 'all'
-                date_filter = "1=1"
-
-            cursor.execute(f"""
+        # Predefined queries for different periods
+        queries = {
+            'today': self._get_prepared_statement("""
                 SELECT
                     SUM(files_organised) as total_files,
                     SUM(time_saved_minutes) as total_time_saved,
                     SUM(duplicates_removed) as total_duplicates,
                     SUM(ai_classifications) as total_ai_classifications
                 FROM stats
-                WHERE {date_filter}
+                WHERE stat_date = date('now')
+            """),
+            'week': self._get_prepared_statement("""
+                SELECT
+                    SUM(files_organised) as total_files,
+                    SUM(time_saved_minutes) as total_time_saved,
+                    SUM(duplicates_removed) as total_duplicates,
+                    SUM(ai_classifications) as total_ai_classifications
+                FROM stats
+                WHERE stat_date >= date('now', '-7 days')
+            """),
+            'month': self._get_prepared_statement("""
+                SELECT
+                    SUM(files_organised) as total_files,
+                    SUM(time_saved_minutes) as total_time_saved,
+                    SUM(duplicates_removed) as total_duplicates,
+                    SUM(ai_classifications) as total_ai_classifications
+                FROM stats
+                WHERE stat_date >= date('now', '-30 days')
+            """),
+            'all': self._get_prepared_statement("""
+                SELECT
+                    SUM(files_organised) as total_files,
+                    SUM(time_saved_minutes) as total_time_saved,
+                    SUM(duplicates_removed) as total_duplicates,
+                    SUM(ai_classifications) as total_ai_classifications
+                FROM stats
             """)
+        }
+
+        sql = queries.get(period, queries['all'])
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql)
 
             row = cursor.fetchone()
             return {
@@ -515,6 +770,65 @@ class DatabaseManager:
                 ON CONFLICT(stat_date) DO UPDATE SET
                     duplicates_removed = duplicates_removed + ?
             """, (today, count, count))
+
+    # ==================== Deferred Queue Operations ====================
+
+    def enqueue_deferred(self, file_path: str, eligible_at: datetime) -> int:
+        """Add a file to the deferred processing queue."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO deferred_queue (file_path, eligible_at, status)
+                VALUES (?, ?, 'queued')
+                """,
+                (file_path, eligible_at.isoformat())
+            )
+            item_id = cursor.lastrowid
+            if item_id is None:
+                raise RuntimeError("Failed to get item ID after insert")
+            return item_id
+
+    def fetch_due_deferred(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Fetch queued items whose eligible_at has passed."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, file_path, detected_at, eligible_at, status
+                FROM deferred_queue
+                WHERE status = 'queued' AND eligible_at <= datetime('now')
+                ORDER BY eligible_at ASC
+                LIMIT ?
+                """,
+                (limit,)
+            )
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def mark_deferred_status(self, item_id: int, status: str, error: str | None = None) -> None:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE deferred_queue SET status = ?, last_error = ? WHERE id = ?",
+                (status, error, item_id)
+            )
+
+    def cleanup(self) -> None:
+        """
+        Clean up resources and close connection pool.
+        Should be called when shutting down the application.
+        """
+        if hasattr(self, 'connection_pool'):
+            self.connection_pool.close_all()
+        self._prepared_statements.clear()
+
+    def __del__(self):
+        """Destructor to ensure cleanup."""
+        try:
+            self.cleanup()
+        except:
+            pass  # Ignore errors during cleanup
 
 
 if __name__ == "__main__":

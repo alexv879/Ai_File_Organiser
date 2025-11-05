@@ -1,82 +1,66 @@
-.claude/.claude/.claude/
-
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
 
-**/__pycache__/__pycache__/__pycache__/
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
 
-*.pyc
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-.pytest_cache/**/__pycache__/**/__pycache__/
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.tox/
 
-data/
+# Project Specific - Runtime Data
+data/*.db
+data/*.key
+data/*.pem
+data/logs/
+logs/
+*.log
 
-logs/*.pyc*.pyc
-
-*.db
-
-*.key.pytest_cache/.pytest_cache/
-
+# Credentials & Secrets
+*.key
 *.pem
+*.env
+config.json  # Contains user-specific paths
 
-*.envdata/data/
+# AI Assistant Cache (Prevent recreation)
+.serena/
+.claude/
+.copilot/
 
-AGENT_IMPLEMENTATION.md
+# Temporary files
+*.tmp
+nul
 
-ANALYSIS_SUMMARY.mdlogs/logs/
+# OS
+.DS_Store
+Thumbs.db
 
-CODE_ANALYSIS_REPORT.md
-
-COMPLETE_FIX_PROMPT_FOR_CLAUDE.md*.db*.db
-
-COMPREHENSIVE_CODE_ANALYSIS_NOVEMBER_2025.md
-
-CONSOLIDATED_FIX_PROMPT_FOR_CLAUDE.txt*.key*.key
-
-EXECUTIVE_SUMMARY.md
-
-FIXES_APPLIED.md*.pem*.pem
-
-IMPLEMENTATION_SUMMARY.md
-
-INDEX_AND_ROADMAP.md*.env*.env
-
-INSTALLATION_AND_TESTING.md
-
-ISSUE_INVENTORY_AND_SUMMARY.mdAGENT_IMPLEMENTATION.mdAGENT_IMPLEMENTATION.md
-
-QUICK_FIX_CHECKLIST.md
-
-QUICK_REFERENCE_FIX_PLAN.mdANALYSIS_SUMMARY.mdANALYSIS_SUMMARY.md
-
-config.json
-
-CRITICAL_FIXES.pyCODE_ANALYSIS_REPORT.mdCODE_ANALYSIS_REPORT.md
-
-docs/
-
-COMPLETE_FIX_PROMPT_FOR_CLAUDE.mdCOMPLETE_FIX_PROMPT_FOR_CLAUDE.md
-
-COMPREHENSIVE_CODE_ANALYSIS_NOVEMBER_2025.mdCOMPREHENSIVE_CODE_ANALYSIS_NOVEMBER_2025.md
-
-CONSOLIDATED_FIX_PROMPT_FOR_CLAUDE.txtCONSOLIDATED_FIX_PROMPT_FOR_CLAUDE.txt
-
-EXECUTIVE_SUMMARY.mdEXECUTIVE_SUMMARY.md
-
-FIXES_APPLIED.mdFIXES_APPLIED.md
-
-IMPLEMENTATION_SUMMARY.mdIMPLEMENTATION_SUMMARY.md
-
-INDEX_AND_ROADMAP.mdINDEX_AND_ROADMAP.md
-
-INSTALLATION_AND_TESTING.mdINSTALLATION_AND_TESTING.md
-
-ISSUE_INVENTORY_AND_SUMMARY.mdISSUE_INVENTORY_AND_SUMMARY.md
-
-QUICK_FIX_CHECKLIST.mdQUICK_FIX_CHECKLIST.md
-
-QUICK_REFERENCE_FIX_PLAN.mdQUICK_REFERENCE_FIX_PLAN.md
-
-config.jsonconfig.json
-
-CRITICAL_FIXES.pyCRITICAL_FIXES.py
-
+# AI-Generated Documentation (Cleaned up)
+*_SUMMARY.md
+*_ANALYSIS.md
+*_REPORT.md
+*_PROMPT*.md
+*_PROMPT*.txt
+CRITICAL_FIXES.py

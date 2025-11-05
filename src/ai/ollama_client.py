@@ -17,6 +17,7 @@ License: Proprietary (200-key limited release)
 
 import json
 import requests
+from requests.exceptions import RequestException, Timeout
 from typing import Dict, Any, Optional
 from pathlib import Path
 
@@ -30,17 +31,17 @@ class OllamaClient:
 
     Attributes:
         base_url (str): Ollama API base URL (default: http://localhost:11434)
-        model (str): Ollama model to use (default: llama3)
+        model (str): Ollama model to use (default: qwen2.5:7b-instruct)
         timeout (int): Request timeout in seconds
     """
 
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3", timeout: int = 30):
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen2.5:7b-instruct", timeout: int = 30):
         """
         Initialize Ollama client.
 
         Args:
             base_url (str): Ollama API endpoint
-            model (str): Model name to use for inference
+            model (str): Model name to use for inference (default: qwen2.5:7b-instruct)
             timeout (int): Request timeout in seconds
         """
         self.base_url = base_url.rstrip('/')
@@ -57,7 +58,7 @@ class OllamaClient:
         try:
             response = requests.get(f"{self.base_url}/api/tags", timeout=5)
             return response.status_code == 200
-        except requests.exceptions.RequestException:
+        except Exception:
             return False
 
     def list_models(self) -> list:
@@ -72,7 +73,7 @@ class OllamaClient:
             if response.status_code == 200:
                 models = response.json().get('models', [])
                 return [model['name'] for model in models]
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             print(f"Error listing models: {e}")
 
         return []
@@ -200,10 +201,10 @@ Provide your classification:"""
                 fallback["raw_response"] = response_text[:200]  # Include snippet for debugging
                 return fallback
 
-        except requests.exceptions.Timeout:
+        except Timeout:
             fallback["error"] = "Request timed out"
             return fallback
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             fallback["error"] = f"Request failed: {str(e)}"
             return fallback
 
@@ -239,7 +240,7 @@ Provide your classification:"""
             else:
                 return f"Error: API returned status {response.status_code}"
 
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             return f"Error communicating with Ollama: {str(e)}"
 
     def pull_model(self, model_name: str) -> bool:
@@ -259,7 +260,7 @@ Provide your classification:"""
                 timeout=300  # Longer timeout for model downloads
             )
             return response.status_code == 200
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             print(f"Error pulling model: {e}")
             return False
 
@@ -280,7 +281,7 @@ def create_client(base_url: str = "http://localhost:11434", model: str = "llama3
     return OllamaClient(base_url=base_url, model=model)
 
 
-def quick_classify(filename: str, extension: str, snippet: str = None) -> Dict[str, Any]:
+def quick_classify(filename: str, extension: str, snippet: Optional[str] = None) -> Dict[str, Any]:
     """
     Quick classification using default Ollama settings.
 

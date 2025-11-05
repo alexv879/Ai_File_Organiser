@@ -25,15 +25,21 @@ try:
 except ImportError:
     PDF_SUPPORT = False
 
+# Python-docx for Word document text extraction
+# Reference: python-docx library for reading .docx files
 try:
-    from docx import Document
+    from docx import Document  # type: ignore
     DOCX_SUPPORT = True
 except ImportError:
+    Document = None  # type: ignore
     DOCX_SUPPORT = False
 
 
 class TextExtractor:
-    """Shared text extraction without classifier dependency."""
+    """
+    Shared text extraction without classifier dependency.
+    Extracts text content from various file formats including PDF, DOCX, and plain text.
+    """
 
     # Maximum file size for text extraction (10 MB)
     MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -136,7 +142,7 @@ class TextExtractor:
 
     def _extract_docx_text(self, path: Path) -> Optional[str]:
         """
-        Extract text from DOCX file.
+        Extract text from DOCX file using python-docx library.
 
         Args:
             path (Path): Path to DOCX file
@@ -144,8 +150,11 @@ class TextExtractor:
         Returns:
             str or None: Extracted text or None if extraction fails
         """
+        if not DOCX_SUPPORT or Document is None:
+            return None
+            
         try:
-            doc = Document(path)
+            doc = Document(str(path))
             text = '\n'.join([para.text for para in doc.paragraphs[:5]])
             return text[:self.text_extract_limit]
         except Exception:

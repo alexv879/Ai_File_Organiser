@@ -1,0 +1,145 @@
+version: "1.0"
+
+# Global settings
+settings:
+  watched_folders:
+    - "~/Desktop"
+    - "~/Downloads"
+  base_destination: "~/Documents"
+  auto_mode: false
+  dry_run: true
+  parallel_processing: true
+  max_workers: 4
+  progress_reporting: true
+
+# Advanced filter definitions
+filters:
+  # Size-based filters
+  small_files:
+    size_max: 1048576  # 1MB
+
+  large_files:
+    size_min: 104857600  # 100MB
+
+  # Date-based filters
+  recent_files:
+    date_modified_after: "2024-01-01"
+
+  old_files:
+    date_modified_before: "2023-01-01"
+
+  # Pattern-based filters
+  documents:
+    extensions: [".pdf", ".docx", ".doc", ".txt", ".rtf"]
+    mime_types: ["application/pdf", "application/msword", "text/plain"]
+
+  images:
+    extensions: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"]
+    mime_types: ["image/jpeg", "image/png", "image/gif"]
+
+  videos:
+    extensions: [".mp4", ".avi", ".mkv", ".mov", ".wmv"]
+    mime_types: ["video/mp4", "video/avi", "video/x-matroska"]
+
+  archives:
+    extensions: [".zip", ".rar", ".7z", ".tar", ".gz"]
+    patterns: ["*archive*", "*backup*"]
+
+  # Regex-based filters
+  temp_files:
+    regex_patterns: ["\\.tmp$", "\\.temp$", "~$", "\\.bak$"]
+    exclude_patterns: ["*.log"]
+
+# Action definitions
+actions:
+  # Basic organization actions
+  organize_documents:
+    action: "move"
+    destination: "{base_destination}/Documents/{file_stem}{file_suffix}"
+    conflict_resolution: "rename"
+
+  organize_images:
+    action: "move"
+    destination: "{base_destination}/Pictures/{year}/{month:02d}/{file_name}"
+    conflict_resolution: "rename"
+
+  organize_videos:
+    action: "move"
+    destination: "{base_destination}/Videos/{file_name}"
+    conflict_resolution: "rename"
+
+  # Archive actions
+  archive_old:
+    action: "move"
+    destination: "{base_destination}/Archive/Old/{year}/{month:02d}/{file_name}"
+    conflict_resolution: "rename"
+
+  archive_large:
+    action: "move"
+    destination: "{base_destination}/Archive/Large/{file_name}"
+    conflict_resolution: "rename"
+
+  # Cleanup actions
+  delete_temp:
+    action: "delete"
+
+  # Custom script actions
+  custom_processing:
+    action: "script"
+    script: |
+      import os
+      from pathlib import Path
+
+      # Custom processing logic
+      if file_size > 1000000:  # > 1MB
+          print(f"Processing large file: {file_name}")
+      else:
+          print(f"Processing small file: {file_name}")
+
+# Organization rules
+rules:
+  # Document organization
+  - name: "Document Organization"
+    filters: ["documents"]
+    actions: ["organize_documents"]
+    tags: ["documents", "auto", "organization"]
+
+  # Image organization
+  - name: "Image Organization"
+    filters: ["images"]
+    actions: ["organize_images"]
+    tags: ["images", "auto", "organization"]
+
+  # Video organization
+  - name: "Video Organization"
+    filters: ["videos"]
+    actions: ["organize_videos"]
+    tags: ["videos", "auto", "organization"]
+
+  # Archive management
+  - name: "Archive Old Files"
+    filters: ["old_files"]
+    actions: ["archive_old"]
+    tags: ["archive", "cleanup"]
+
+  - name: "Archive Large Files"
+    filters: ["large_files"]
+    actions: ["archive_large"]
+    tags: ["archive", "large_files"]
+
+  # Cleanup rules
+  - name: "Delete Temp Files"
+    filters: ["temp_files"]
+    actions: ["delete_temp"]
+    tags: ["cleanup", "temp"]
+
+  # Selective execution examples
+  - name: "Quick Organization"
+    filters: ["documents", "images"]
+    actions: ["organize_documents", "organize_images"]
+    tags: ["quick", "basic"]
+
+  - name: "Full Cleanup"
+    filters: ["temp_files", "old_files", "large_files"]
+    actions: ["delete_temp", "archive_old", "archive_large"]
+    tags: ["cleanup", "comprehensive"]

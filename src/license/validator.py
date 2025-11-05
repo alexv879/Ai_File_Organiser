@@ -244,9 +244,12 @@ class LicenseValidator:
                 status='active'
             )
 
+            # Format expiry message
+            expiry_msg = expiry_date.strftime("%Y-%m-%d") if expiry_date else "N/A"
+
             return {
                 'success': True,
-                'message': f'License activated successfully! Valid until {expiry_date.strftime("%Y-%m-%d")}',
+                'message': f'License activated successfully! Valid until {expiry_msg}',
                 'expiry_date': expiry_date
             }
         else:

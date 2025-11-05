@@ -1,0 +1,121 @@
+{
+  "description": "Few-shot examples for AgentAnalyzer JSON output calibration",
+  "version": "1.0",
+  "examples": [
+    {
+      "input": {
+        "filename": "Invoice_2025_March_AcmeCorp.pdf",
+        "extension": ".pdf",
+        "size_bytes": 45231,
+        "snippet": "Invoice #12345\nDate: 2025-03-15\nAmount: $250.00\nClient: Acme Corp\nServices: Consulting"
+      },
+      "output": {
+        "category": "Finance",
+        "suggested_path": "Documents/Finance/Invoices/2025/03",
+        "rename": "2025-03-15_Invoice_AcmeCorp_12345.pdf",
+        "confidence": "high",
+        "method": "agent",
+        "reason": "Invoice document with clear date and client information",
+        "evidence": [
+          "Invoice number #12345 found in document",
+          "Date: 2025-03-15",
+          "Client: Acme Corp"
+        ],
+        "action": "move",
+        "block_reason": null
+      }
+    },
+    {
+      "input": {
+        "filename": "meeting_notes.txt",
+        "extension": ".txt",
+        "size_bytes": 1024,
+        "snippet": "Team meeting 2025-10-15\nAttendees: Alice, Bob\nAgenda: Q4 planning\nAction items: Review budget, update roadmap"
+      },
+      "output": {
+        "category": "Documents",
+        "suggested_path": "Documents/Meetings/2025/10",
+        "rename": "2025-10-15_Team_Meeting_Notes.txt",
+        "confidence": "high",
+        "method": "agent",
+        "reason": "Meeting notes with clear date and structure",
+        "evidence": [
+          "Team meeting 2025-10-15",
+          "Contains attendees and agenda",
+          "Action items listed"
+        ],
+        "action": "move",
+        "block_reason": null
+      }
+    },
+    {
+      "input": {
+        "filename": "setup.exe",
+        "extension": ".exe",
+        "size_bytes": 52428800,
+        "snippet": ""
+      },
+      "output": {
+        "category": "Program",
+        "suggested_path": null,
+        "rename": null,
+        "confidence": "high",
+        "method": "agent",
+        "reason": "Executable file likely part of a program installation",
+        "evidence": [
+          "File extension .exe indicates executable",
+          "Large file size suggests installer",
+          "No text content available"
+        ],
+        "action": "none",
+        "block_reason": "executable files should not be moved automatically"
+      }
+    },
+    {
+      "input": {
+        "filename": "project_proposal_draft.docx",
+        "extension": ".docx",
+        "size_bytes": 15680,
+        "snippet": "Project Proposal: AI File Organizer\nVersion: 0.1 Draft\nAuthor: Team Lead\nDate: 2025-11-01\n\nExecutive Summary..."
+      },
+      "output": {
+        "category": "Projects",
+        "suggested_path": "Documents/Projects/AI_File_Organizer",
+        "rename": "2025-11-01_Project_Proposal_Draft_v0.1.docx",
+        "confidence": "high",
+        "method": "agent",
+        "reason": "Project proposal document with clear metadata",
+        "evidence": [
+          "Project Proposal: AI File Organizer",
+          "Version: 0.1 Draft",
+          "Date: 2025-11-01"
+        ],
+        "action": "move",
+        "block_reason": null
+      }
+    },
+    {
+      "input": {
+        "filename": "IMG_20251101_143522.jpg",
+        "extension": ".jpg",
+        "size_bytes": 2457600,
+        "snippet": ""
+      },
+      "output": {
+        "category": "Photos",
+        "suggested_path": "Pictures/2025/11",
+        "rename": "2025-11-01_143522.jpg",
+        "confidence": "medium",
+        "method": "agent",
+        "reason": "Photo file with timestamp in filename",
+        "evidence": [
+          "Filename pattern suggests camera photo",
+          "Timestamp: 2025-11-01 14:35:22",
+          "JPG image format"
+        ],
+        "action": "move",
+        "block_reason": null
+      }
+    }
+  ]
+}
