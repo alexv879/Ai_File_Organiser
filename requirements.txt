@@ -49,10 +49,14 @@ python-docx>=1.0.0     # Microsoft Word DOCX file processing
 Pillow>=10.0.0         # Image processing and EXIF data extraction
 mutagen>=1.47.0        # Audio/video metadata (ID3, MP4, FLAC, etc.)
 
-# Security (REQUIRED for license validation)
+# Security (REQUIRED for authentication and license validation)
 cryptography>=41.0.0   # Cryptographic primitives
 bcrypt>=4.0.0          # Password hashing (Blowfish cipher)
 PyJWT>=2.8.0           # JSON Web Tokens (RFC 7519)
+python-jose[cryptography]>=3.3.0  # JWT handling with cryptography backend
+passlib[bcrypt]>=1.7.4  # Password hashing utilities
+slowapi>=0.1.9         # Rate limiting for FastAPI
+python-multipart>=0.0.9  # Form parsing for authentication
 
 # User interface (REQUIRED for progress display)
 tqdm>=4.66.0           # Progress bars for terminal
@@ -62,6 +66,13 @@ pytest>=7.4.0          # Testing framework
 pytest-cov>=4.1.0      # Code coverage plugin
 pytest-asyncio>=0.21.0 # Async testing support
 pytest-mock>=3.11.1    # Mocking utilities
+pytest-xdist>=3.3.1    # Parallel testing
+pytest-timeout>=2.1.0  # Timeout protection for tests
+
+# Type checking (OPTIONAL for development)
+mypy>=1.8.0            # Static type checker
+types-requests>=2.31.0 # Type stubs for requests
+types-PyYAML>=6.0.0    # Type stubs for PyYAML
 
 # Additional utilities (OPTIONAL)
 organize>=0.1.0        # File organization rules engine
@@ -70,6 +81,7 @@ filelock>=3.12.0       # Cross-platform file locking
 watchfiles>=0.21.0     # Alternative file watcher (Rust-based, faster)
 filetype>=1.2.0        # File type detection via magic numbers
 python-magic>=0.4.27   # libmagic bindings for MIME detection
+pysqlcipher3>=1.2.0    # SQLCipher for database encryption (OPTIONAL)
 
 # ==============================================================================
 # EXTERNAL DEPENDENCIES
