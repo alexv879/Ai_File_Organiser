@@ -83,6 +83,20 @@ filetype>=1.2.0        # File type detection via magic numbers
 python-magic>=0.4.27   # libmagic bindings for MIME detection
 pysqlcipher3>=1.2.0    # SQLCipher for database encryption (OPTIONAL)
 
+# Cloud Storage APIs (OPTIONAL)
+# Required for cloud storage integration features
+msal>=1.24.0           # Microsoft Authentication Library for OneDrive
+google-auth>=2.23.0    # Google authentication
+google-auth-oauthlib>=1.1.0  # OAuth 2.0 for Google Drive
+google-auth-httplib2>=0.1.1  # HTTP library for Google APIs
+google-api-python-client>=2.100.0  # Google Drive API v3
+dropbox>=11.36.0       # Dropbox API v2
+
+# Multi-Model AI Support (OPTIONAL)
+# Required for advanced AI features with cloud models
+openai>=1.0.0          # OpenAI GPT-4 and GPT-3.5 Turbo
+anthropic>=0.8.0       # Anthropic Claude models
+
 # ==============================================================================
 # EXTERNAL DEPENDENCIES
 # ==============================================================================

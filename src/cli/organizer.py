@@ -19,29 +19,61 @@ from src.core.db_manager import DatabaseManager
 from src.ai.ollama_client import OllamaClient
 from src.config import get_config
 
+# New multi-model AI support
+try:
+    from src.ai.ai_integration import AIOrganizer
+    from src.ai.models.base import ModelTier
+    AI_INTEGRATION_AVAILABLE = True
+except ImportError:
+    AI_INTEGRATION_AVAILABLE = False
+
 
 class Organizer:
     """Intelligently organize files using AI and rules."""
 
-    def __init__(self):
-        """Initialize organizer."""
+    def __init__(self, use_multi_model: bool = False, user_tier: str = "FREE"):
+        """Initialize organizer.
+
+        Args:
+            use_multi_model: Use new multi-model AI system (GPT-4, Claude, Ollama)
+            user_tier: User subscription tier (FREE, STARTER, PRO, ENTERPRISE)
+        """
         self.config = get_config()
         self.db = DatabaseManager()
+        self.use_multi_model = use_multi_model and AI_INTEGRATION_AVAILABLE
 
-        # Initialize Ollama client
+        # Initialize multi-model AI if requested
+        self.ai_organizer = None
+        if self.use_multi_model:
+            try:
+                tier = ModelTier[user_tier.upper()]
+                ai_config = {
+                    'ollama_model': self.config.get('ollama_model', 'qwen2.5:7b-instruct'),
+                    'ollama_base_url': self.config.get('ollama_base_url', 'http://localhost:11434'),
+                    'openai_api_key': self.config.get('openai_api_key'),
+                    'anthropic_api_key': self.config.get('anthropic_api_key')
+                }
+                self.ai_organizer = AIOrganizer(ai_config, user_tier=tier)
+                print_info(f"🤖 Multi-model AI enabled (tier: {tier.value})")
+            except Exception as e:
+                print_warning(f"Could not initialize multi-model AI: {e}")
+                self.use_multi_model = False
+
+        # Fallback: Initialize traditional Ollama client
         self.ollama = None
-        try:
-            self.ollama = OllamaClient(
-                base_url=self.config.ollama_base_url,
-                model=self.config.ollama_model,
-                timeout=self.config.get('ollama_timeout', 30)
-            )
-            if not self.ollama.is_available():
+        if not self.use_multi_model:
+            try:
+                self.ollama = OllamaClient(
+                    base_url=self.config.ollama_base_url,
+                    model=self.config.ollama_model,
+                    timeout=self.config.get('ollama_timeout', 30)
+                )
+                if not self.ollama.is_available():
+                    self.ollama = None
+            except Exception:
                 self.ollama = None
-        except Exception:
-            self.ollama = None
 
-        # Initialize classifier
+        # Initialize classifier (traditional system)
         self.classifier = FileClassifier(self.config, self.ollama)
 
         # Initialize action manager
@@ -104,10 +136,20 @@ class Organizer:
         with click.progressbar(files, label='Analyzing') as bar:
             for file_path in bar:
                 try:
-                    classification = self.classifier.classify(
-                        str(file_path),
-                        deep_analysis=deep
-                    )
+                    # Use new multi-model AI if available
+                    if self.use_multi_model and self.ai_organizer:
+                        classification = self.ai_organizer.classify_file(
+                            str(file_path),
+                            deep_analysis=deep,
+                            prefer_local=(self.ai_organizer.user_tier == ModelTier.FREE)
+                        )
+                    else:
+                        # Fallback to traditional classifier
+                        classification = self.classifier.classify(
+                            str(file_path),
+                            deep_analysis=deep
+                        )
+
                     classifications.append({
                         'file': file_path,
                         'classification': classification
@@ -192,3 +234,23 @@ class Organizer:
         time_saved = stats.get('time_saved_hours', 0)
         if time_saved > 0:
             print_success(f"\n⏱️  Total time saved: {time_saved:.2f} hours")
+
+        # Show AI statistics if using multi-model
+        if self.use_multi_model and self.ai_organizer:
+            total_cost = sum(
+                item['classification'].get('cost_usd', 0.0)
+                for item in classifications
+            )
+            total_tokens = sum(
+                item['classification'].get('tokens_used', 0)
+                for item in classifications
+            )
+            avg_time = sum(
+                item['classification'].get('processing_time_ms', 0)
+                for item in classifications
+            ) / max(len(classifications), 1)
+
+            print_info(f"\n🤖 AI Statistics:")
+            print_info(f"   Total cost: ${total_cost:.4f}")
+            print_info(f"   Total tokens: {total_tokens:,}")
+            print_info(f"   Avg processing time: {avg_time:.0f}ms per file")

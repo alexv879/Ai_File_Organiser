@@ -1,0 +1,92 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "AI File Organizer",
+  "version": "1.0.0",
+  "identifier": "com.aifileorganizer.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "identifier": "com.aifileorganizer.app",
+    "publisher": "Alexandru Emanuel Vasile",
+    "copyright": "Copyright © 2025 Alexandru Emanuel Vasile. All rights reserved.",
+    "category": "Productivity",
+    "shortDescription": "Intelligent AI-powered file organization",
+    "longDescription": "AI File Organizer uses advanced AI models to intelligently categorize and organize your files, saving you time and keeping your digital life tidy.",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "macOS": {
+      "entitlements": null,
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    }
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:"
+    },
+    "windows": [
+      {
+        "title": "AI File Organizer",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "center": true,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ]
+  },
+  "plugins": {
+    "fs": {
+      "scope": {
+        "allow": ["$HOME/**", "$DESKTOP/**", "$DOWNLOAD/**", "$DOCUMENT/**"],
+        "deny": []
+      }
+    },
+    "dialog": {
+      "all": true,
+      "ask": true,
+      "confirm": true,
+      "message": true,
+      "open": true,
+      "save": true
+    },
+    "shell": {
+      "open": true,
+      "scope": [
+        {
+          "name": "python",
+          "cmd": "python",
+          "args": true,
+          "sidecar": false
+        }
+      ]
+    }
+  }
+}

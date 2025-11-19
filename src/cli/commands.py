@@ -90,7 +90,10 @@ def space(analyze, duplicates, large_old, migrate, auto):
 @click.option('--preview', '-p', is_flag=True, help='Preview changes (dry run)')
 @click.option('--auto', '-a', is_flag=True, help='Auto-approve (skip confirmation)')
 @click.option('--deep', '-d', is_flag=True, help='Deep AI analysis (slower, better)')
-def organize(folder, preview, auto, deep):
+@click.option('--multi-model', '-m', is_flag=True, help='Use multi-model AI (GPT-4, Claude, Ollama)')
+@click.option('--tier', type=click.Choice(['FREE', 'STARTER', 'PRO', 'ENTERPRISE'], case_sensitive=False),
+              default='FREE', help='User subscription tier for AI model selection')
+def organize(folder, preview, auto, deep, multi_model, tier):
     """
     Organize files intelligently
 
@@ -100,10 +103,11 @@ def organize(folder, preview, auto, deep):
       aifo organize -p             # Preview first
       aifo organize -a             # Auto-approve
       aifo organize -d ~/Pictures  # Deep AI for photos
+      aifo organize -m --tier PRO  # Use advanced AI models (GPT-4, Claude)
     """
     from src.cli.organizer import Organizer
 
-    org = Organizer()
+    org = Organizer(use_multi_model=multi_model, user_tier=tier)
     org.organize_folder(folder, preview, auto, deep)
 
 
